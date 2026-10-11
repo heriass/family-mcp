@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- The phone-number prompt of `auth login` is written only once the terminal
+  reads keys raw, as in the TypeScript CLI. Before, the prompt could appear
+  while the terminal still echoed, so a number typed at once could be shown.
+  A terminal that cannot be made raw still fails before any prompt.
+
 ## 0.4.0
 
 - The native binary is now built from Rust. Tools, inputs, results, CLI

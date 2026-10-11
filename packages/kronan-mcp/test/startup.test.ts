@@ -2,8 +2,15 @@ import { expect, test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  StoreRefusal,
+  checkSecretStore,
+  defaultKeyProvider,
+  defaultSecretRecordPath,
+} from '@family-mcp/session-store';
 
 import { migrateToken } from '../src/auth.js';
 
@@ -66,6 +73,30 @@ test('the CLI refuses to start on an unsafe store and touches nothing', async ()
   }
 }, 60_000);
 
+/**
+ * Create the record folder and wait until Time Machine confirms its exclusion, as the store would.
+ * A loaded machine's `tmutil isexcluded` can outlast the store's 5 s bound, which refuses the
+ * store; once this process confirmed the folder, the store does not ask tmutil again for it.
+ */
+async function confirmExcluded(): Promise<void> {
+  const path = defaultSecretRecordPath('kronan-mcp');
+  const keys = defaultKeyProvider({ server: 'kronan-mcp', profile: 'default' });
+  const deadline = Date.now() + 90_000;
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+
+  for (;;)
+    try {
+      await checkSecretStore({ path, keys });
+
+      return;
+    } catch (error) {
+      const unconfirmed =
+        error instanceof StoreRefusal && error.message.startsWith('Time Machine did not confirm');
+
+      if (!unconfirmed || Date.now() > deadline) throw error;
+    }
+}
+
 test.skipIf(process.platform !== 'darwin')(
   'an earlier build’s macOS store keeps deciding, so no plaintext is imported over it',
   async () => {
@@ -94,6 +125,7 @@ test.skipIf(process.platform !== 'darwin')(
         mode: 0o600,
       });
       await writeFile(legacy, '{}', { mode: 0o600 });
+      await confirmExcluded();
 
       await assert.rejects(migrateToken(), /store key is missing/);
       expect(await readFile(legacy, 'utf8')).toBe('{}');
@@ -107,4 +139,5 @@ test.skipIf(process.platform !== 'darwin')(
       await rm(home, { recursive: true, force: true });
     }
   },
+  120_000,
 );

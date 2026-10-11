@@ -202,17 +202,7 @@ if (process.env.INNA_FAKE_LAUNCHER === '1') {
       }, 10);
   }
 
-  await writeFile(
-    stateFile,
-    JSON.stringify({
-      pid: process.pid,
-      profile: userDataDir,
-      profileMode: (await stat(userDataDir)).mode & 0o777,
-      transport: 'pipe',
-      args,
-    }),
-  );
-
+  // The state file tells the test the browser is ready, so it may be signalled from then on.
   process.on('SIGTERM', () => {
     writeFile(signalFile, 'SIGTERM')
       .then(async () => {
@@ -234,4 +224,15 @@ if (process.env.INNA_FAKE_LAUNCHER === '1') {
         process.exitCode = 1;
       });
   });
+
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      pid: process.pid,
+      profile: userDataDir,
+      profileMode: (await stat(userDataDir)).mode & 0o777,
+      transport: 'pipe',
+      args,
+    }),
+  );
 }

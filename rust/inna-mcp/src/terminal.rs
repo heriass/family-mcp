@@ -2,7 +2,7 @@
 //! sink: the first line of standard input, or on a terminal one line typed in raw mode without
 //! echo. Adapted from rust/kronan-mcp/src/terminal.rs. Everything here blocks.
 
-use std::io::{IsTerminal, Read};
+use std::io::{IsTerminal, Read, Write};
 
 use rustix::termios::{
     InputModes, LocalModes, OptionalActions, OutputModes, SpecialCodeIndex, Termios, tcgetattr,
@@ -130,13 +130,23 @@ impl Keys {
     }
 }
 
-/// One line typed on the terminal, unechoed; `None` when it is cancelled or the input closes.
-fn read_hidden_line() -> Result<Option<String>> {
-    // Like `setRawMode` throwing: nothing is read while the terminal would echo it.
+/// `prompt`, then one line typed on the terminal, unechoed; `None` when it is cancelled or the
+/// input closes.
+fn read_hidden_line(prompt: &str) -> Result<Option<String>> {
+    // Like `setRawMode` throwing in createInterface, before cli.ts writes its prompt: no prompt
+    // is shown and nothing is read while the terminal would echo it.
     let raw = Raw::enter().ok_or(Fail::Unknown)?;
+    // The prompt shows only once the terminal is raw, as cli.ts writes it after createInterface,
+    // so a key typed as soon as it shows is read unechoed.
+    show(prompt);
     let line = hidden_line(&mut std::io::stdin().lock());
     drop(raw);
     line
+}
+
+fn show(prompt: &str) {
+    eprint!("{prompt}");
+    let _ = std::io::stderr().flush();
 }
 
 /// The keys read from `input` up to the line's end; `None` when they cancel it or the input ends.
@@ -189,11 +199,15 @@ fn read_first_line() -> Option<String> {
     (!(ended && line.is_empty())).then(|| String::from_utf8_lossy(&line).into_owned())
 }
 
-/// The phone number as typed, before `trim`: `None` when the owner cancelled or the input closed.
-pub fn read_phone() -> Result<Option<String>> {
+/// `prompt` on standard error, then the phone number as typed, before `trim`: `None` when the
+/// owner cancelled or the input closed.
+pub fn read_phone(prompt: &str) -> Result<Option<String>> {
     match std::io::stdin().is_terminal() {
-        true => read_hidden_line(),
-        false => Ok(read_first_line()),
+        true => read_hidden_line(prompt),
+        false => {
+            show(prompt);
+            Ok(read_first_line())
+        }
     }
 }
 

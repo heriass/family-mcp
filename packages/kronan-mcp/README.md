@@ -14,7 +14,7 @@ Krónan account**. The read tools were verified on 2026-09-15 and 2026-09-16; se
 Install the native executable:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/kronan-mcp@0.3.0/packages/kronan-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/kronan-mcp@0.3.1/packages/kronan-mcp/install.sh | sh
 ```
 
 In Krónan, sign in with Auðkenni and create an access token from the settings

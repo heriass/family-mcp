@@ -135,7 +135,7 @@ WARP is currently unreliable on the tested Grok route; see the
 Install the preview and start electronic-ID login:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/inna-mcp@0.4.0/packages/inna-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/inna-mcp@0.4.1/packages/inna-mcp/install.sh | sh
 inna-mcp auth login
 ```
 
@@ -168,7 +168,7 @@ See [setup, tools, and cookie import for a machine without a desktop](packages/i
 ## Krónan
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/kronan-mcp@0.3.0/packages/kronan-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/kronan-mcp@0.3.1/packages/kronan-mcp/install.sh | sh
 ```
 
 Upgrading replaces the command but not a running server; restart the MCP host, or

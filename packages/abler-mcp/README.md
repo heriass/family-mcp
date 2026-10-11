@@ -29,11 +29,8 @@ prefix or `ABLER_VERSION` to a released version before running it. Verify an ins
 /absolute/path/to/.local/bin/abler-mcp --version
 ```
 
-Expected output:
-
-```text
-0.5.0
-```
+Expected output: the installed version, such as the one after `abler-mcp@` in the Quick
+start installer URL.
 
 Run the Quick start installer again to upgrade; the saved session stays in place.
 After upgrading from 0.6.0 or earlier, run `abler-mcp auth migrate` once (see

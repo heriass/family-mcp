@@ -2,7 +2,9 @@
 //! the same keystrokes on a pseudo-terminal, read the same token (sent to a local fake `/me/`),
 //! print the same text, exit the same way and leave the terminal mode as they found it, also when
 //! SIGTERM or SIGINT ends them in the middle of the prompt. A terminal that hangs up has no mode
-//! left on Linux, so there that one case checks the hang-up instead (see `typed`).
+//! left on Linux, and there each side may meet the hang-up as a failed read or as the input's
+//! end, so that one case checks each side against both outcomes instead (see `typed` and the case
+//! loop).
 //! `FAMILY_MCP_BUN` must name a Bun 1.4.2 executable: this test fails without it and is never
 //! skipped. It needs the `test-origin` feature, without which the binary would talk to Domino’s.
 #![cfg(feature = "test-origin")]
@@ -298,8 +300,32 @@ fn the_hidden_prompt_reads_keystrokes_like_the_typescript_cli() {
             typed(&mut command, keys, end)
         };
         let ts = run("ts");
-        let hung_up = cfg!(target_os = "linux") && matches!(end, End::HangUp);
-        assert_eq!(ts.restored, (!hung_up).then_some(true), "{keys:?}: {ts:?}");
+
+        // When the controlling side closes, Linux hangs the terminal up. A read already waiting in
+        // the terminal driver fails (EIO), the generic failure; a read that starts after the
+        // hang-up ends the input, which cancels. Which one a prompt meets depends on whether it is
+        // back in its read when the terminal hangs up, which the test cannot see for Bun, so on
+        // Linux each side is checked against both outcomes and not against the other. macOS ends
+        // the input either way, and there the two sides must match.
+        if cfg!(target_os = "linux") && matches!(end, End::HangUp) {
+            let after_prompt = |text: &str| Outcome {
+                code: Some(1),
+                signal: None,
+                stdout: String::new(),
+                stderr: format!("Icelandic phone number (input hidden): {text}"),
+                sent: Vec::new(),
+                restored: None,
+            };
+            let outcomes = [
+                after_prompt("Domino’s MCP failed. Check the local configuration.\n"),
+                after_prompt("Sign-in cancelled.\n"),
+            ];
+            assert!(outcomes.contains(&ts), "{keys:?}: {ts:?}");
+            let rust = run("rust");
+            assert!(outcomes.contains(&rust), "{keys:?}: {rust:?}");
+            continue;
+        }
+        assert_eq!(ts.restored, Some(true), "{keys:?}: {ts:?}");
         let mut rust = run("rust");
         let interpretation = if keys == b"5550123\r\x1b[A123456\r" {
             Some("history")

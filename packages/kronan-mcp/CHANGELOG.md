@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+- A money tool (`reserve_delivery_slot`, `reserve_pickup_slot`,
+  `complete_checkout`, `add_checkout_to_order`) reads the saved token once,
+  before its checks, and uses it for the checks and the order call. A token
+  that cannot be read now refuses with the token store's own message, and
+  nothing is recorded or sent. Before, a token that became unreadable after
+  the checks recorded an unknown outcome for an order call that was never
+  sent. This is an intended difference from the TypeScript package, which
+  reads the token for each request.
+
 ## 0.3.0
 
 - The native binary is now built from Rust. Tools, inputs, results, order

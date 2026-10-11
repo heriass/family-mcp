@@ -1,7 +1,7 @@
 # Release process
 
 Source: https://github.com/olafurns7/family-mcp/tree/main/packages/kronan-mcp
-Tags use `kronan-mcp@<version>`; the current version is `kronan-mcp@0.3.0`.
+Tags use `kronan-mcp@<version>`; the current version is `kronan-mcp@0.3.1`.
 Native binaries are the only distribution.
 
 1. Bump this package's `version` in `package.json`.
@@ -14,7 +14,7 @@ Native binaries are the only distribution.
 8. Publish the draft release.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/kronan-mcp@0.3.0/packages/kronan-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/kronan-mcp@0.3.1/packages/kronan-mcp/install.sh | sh
 ```
 
 The executable is compiled from the Rust crate `rust/kronan-mcp`

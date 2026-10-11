@@ -338,10 +338,23 @@ test('ancestors that another user could replace are refused, also above a missin
 
     // Sticky and shared like /tmp: only this user can move the entry below it.
     await chmod(open, 0o1777);
-    expect(await checkSecretStore(layout(join(root, 'alias')))).toEqual({
-      exists: false,
-      retired: [],
-    });
+
+    // A refusal was seen once in CI (job 114213135837) and never reproduced: name what the sticky
+    // exemption saw, so the next failure carries its cause.
+    try {
+      expect(await checkSecretStore(layout(join(root, 'alias')))).toEqual({
+        exists: false,
+        retired: [],
+      });
+    } catch (error) {
+      const [outer, inner] = await Promise.all([lstat(open), lstat(join(open, 'inner'))]);
+
+      assert.fail(
+        `${String(error)}: open mode ${outer.mode.toString(8)} uid ${outer.uid}, ` +
+          `open/inner uid ${inner.uid}, process uid ${process.getuid?.()}, ` +
+          `umask ${process.umask().toString(8)}`,
+      );
+    }
   });
 });
 

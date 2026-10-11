@@ -1,5 +1,8 @@
 # Brief: upgrade the family MCP servers on a remote VM to the monorepo releases
 
+> Historical: written for infomentor 0.6.0 / abler 0.5.0. For a current upgrade follow the
+> package READMEs (which cover `auth migrate`).
+
 You are operating on a Debian 13 x64 VM (the Grok bot host). InfoMentor MCP is installed
 from the old `olafurns7/infomentor-mcp` repository, probably in WARP mode; Abler MCP may be
 installed from the old `olafurns7/abler-mcp` repository. Both old repositories are archived.

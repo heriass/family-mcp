@@ -52,7 +52,7 @@ fn the_startup_cases_pass_against_this_binary() {
 
 #[test]
 fn the_integration_cases_pass_against_this_binary() {
-    bun_test("integration.test.ts", 30);
+    bun_test("integration.test.ts", 31);
 }
 
 #[test]

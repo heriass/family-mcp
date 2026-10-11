@@ -287,11 +287,11 @@ async fn sign_in_steps(
     allow_account_change: bool,
     signal: signal::Signal,
 ) -> Result<()> {
-    eprint!("Icelandic phone number (input hidden): ");
-    let _ = std::io::stderr().flush();
-    let phone = tokio::task::spawn_blocking(terminal::read_phone)
-        .await
-        .unwrap_or(Err(Fail::Unknown))?;
+    let phone = tokio::task::spawn_blocking(|| {
+        terminal::read_phone("Icelandic phone number (input hidden): ")
+    })
+    .await
+    .unwrap_or(Err(Fail::Unknown))?;
     eprintln!();
 
     let Some(phone) = phone.filter(|_| !signal.aborted()) else {

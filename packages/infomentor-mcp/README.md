@@ -42,11 +42,8 @@ it. Verify an install:
 /absolute/path/to/.local/bin/infomentor-mcp --version
 ```
 
-Expected output:
-
-```text
-0.9.0
-```
+Expected output: the installed version, such as the one after `infomentor-mcp@` in the
+Quick start installer URL.
 
 Run the Quick start installer again to upgrade; the saved session stays in place.
 Upgrading replaces the command but not a running server; restart the MCP host, or

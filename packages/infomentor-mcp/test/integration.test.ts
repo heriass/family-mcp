@@ -1224,13 +1224,16 @@ test('a login whose store write committed reports a late removal failure, not a 
   await writeSession(await savedSession(), file);
   await writeFile(credentialsFile, JSON.stringify(credentials), { mode: 0o600 });
   let verified = false;
+  // The login deadline, fired by the test instead of a clock: under load the steps before the
+  // store write alone can outlast any short real deadline.
+  const deadline = new AbortController();
 
   // The store write's key read outlasts the login deadline once InfoMentor has verified.
   class SlowKeys extends LocalKeyFileProvider {
     override async getKey(): Promise<Uint8Array> {
       const key = await super.getKey();
 
-      if (verified) await delay(400);
+      if (verified) deadline.abort(new DOMException('The deadline passed.', 'TimeoutError'));
 
       return key;
     }
@@ -1243,6 +1246,9 @@ test('a login whose store write committed reports a late removal failure, not a 
     rmSync(file);
     mkdirSync(file);
   };
+
+  // login's first AbortSignal.timeout is its deadline.
+  const timeout = spyOn(AbortSignal, 'timeout').mockImplementationOnce(() => deadline.signal);
 
   try {
     await assert.rejects(
@@ -1259,8 +1265,11 @@ test('a login whose store write committed reports a late removal failure, not a 
           'Cannot remove the plaintext InfoMentor session file. Any encrypted-store change already completed; remove it by hand.',
       },
     );
+    // The deadline passed before the record was written.
+    assert.equal(deadline.signal.aborted, true);
     assert.deepEqual((await readStored(store)).credentials, credentials);
   } finally {
+    timeout.mockRestore();
     routes.restore();
     await rm(directory, { recursive: true, force: true });
   }

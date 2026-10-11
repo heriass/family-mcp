@@ -1354,6 +1354,49 @@ test('a failed gate read refuses the money call without sending it', async () =>
   }
 });
 
+// Rust: an intended difference from api.ts (api.rs `place`). The binary reads the saved token
+// once, in the gate, and sends the order call with it. A token that cannot be read refuses with
+// its own message before anything is recorded or sent; api.ts reads it inside the request, where
+// the same failure records an unknown outcome for a request that never left.
+test('a token that cannot be read refuses the money call before anything is recorded or sent', async () => {
+  const unreadable =
+    'Cannot read the Krónan token file. Use a regular file that you own with owner-only permissions (chmod 600 on Unix), not a symlink or hard link.';
+
+  for (const placement of placements) {
+    // The token file a group can read, named for the record (rust-kronan.ts): before the gate.
+    const { client, sent, attempts } = scriptedClient(() => undefined);
+    const token = attempts.slice(0, -'.order-attempts.json'.length);
+    await writeFile(token, '', { mode: 0o600 });
+    await chmod(token, 0o640);
+
+    try {
+      await assert.rejects(placement.call(client, approval), { message: unreadable });
+      expect(sent, placement.name).toEqual([]);
+      await assert.rejects(stat(attempts), { code: 'ENOENT' });
+    } finally {
+      await client.close();
+    }
+
+    // The same failure once the gate has read the live checkout: the order call is still sent
+    // once, with the token the gate read, instead of an unknown outcome without a request.
+    const later = scriptedClient(async (pathname, method) => {
+      if (method === 'GET' && pathname === '/api/v1/checkout/') await chmod(token, 0o640);
+
+      return undefined;
+    }, attempts);
+    await chmod(token, 0o600);
+
+    try {
+      const placed = await placement.call(later.client, approval);
+      expect(placed.outcome, placement.name).toBe('accepted');
+      expect(posts(later.sent), placement.name).toEqual(['POST ' + placement.path]);
+      expect(await readAttempts(attempts)).toMatchObject([{ state: 'accepted' }]);
+    } finally {
+      await later.client.close();
+    }
+  }
+});
+
 test('other writes are sent once and report an unconfirmed change instead of inviting a retry', async () => {
   // 0 stands for a connection failure after the request was handed to fetch.
   let status = 0;

@@ -1,7 +1,7 @@
 [package]
 name = "inna-mcp"
 # Kept equal to packages/inna-mcp/package.json; a test compares them.
-version = "0.4.0"
+version = "0.4.1"
 description = "Unofficial Inna school MCP with electronic-ID login, private sessions, and confirmed absence requests"
 edition.workspace = true
 rust-version.workspace = true

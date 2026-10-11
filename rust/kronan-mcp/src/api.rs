@@ -2,6 +2,7 @@
 //! messages. A client operation may hold a file lock across requests, so it runs on a blocking
 //! thread and waits for each request with `Handle::block_on`.
 
+use std::cell::OnceCell;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -282,6 +283,14 @@ impl Client {
         })
     }
 
+    /// The token for a request: the saved one, read now, or the one given.
+    fn token(&self) -> Result<String> {
+        match &self.token {
+            Token::Saved => auth::load_token(),
+            Token::Given(token) => Ok(token.clone()),
+        }
+    }
+
     fn send(
         &self,
         method: Method,
@@ -289,11 +298,17 @@ impl Client {
         query: &Query,
         body: Option<&Value>,
     ) -> Result<Exchange> {
-        let token = match &self.token {
-            Token::Saved => auth::load_token()?,
-            Token::Given(token) => token.clone(),
-        };
+        self.send_as(&self.token()?, method, path, query, body)
+    }
 
+    fn send_as(
+        &self,
+        token: &str,
+        method: Method,
+        path: &str,
+        query: &Query,
+        body: Option<&Value>,
+    ) -> Result<Exchange> {
         // Identifiers are validated and encoded, so URL normalization must not move the request.
         if path
             .split('/')
@@ -356,7 +371,21 @@ impl Client {
     }
 
     fn get(&self, path: &str, query: &Query, schema: &S, not_found: Option<Fail>) -> Result<Value> {
-        let data = self.json(self.send(Method::GET, path, query, None)?, not_found)?;
+        self.get_as(&self.token()?, path, query, schema, not_found)
+    }
+
+    fn get_as(
+        &self,
+        token: &str,
+        path: &str,
+        query: &Query,
+        schema: &S,
+        not_found: Option<Fail>,
+    ) -> Result<Value> {
+        let data = self.json(
+            self.send_as(token, Method::GET, path, query, None)?,
+            not_found,
+        )?;
         shapes::parse(schema, &data).ok_or(UNEXPECTED_DATA)
     }
 
@@ -389,7 +418,19 @@ impl Client {
         body: Option<&Value>,
         unconfirmed: Option<Fail>,
     ) -> Result<Exchange> {
-        let exchange = match self.send(method, path, query, body) {
+        self.write_as(&self.token()?, method, path, query, body, unconfirmed)
+    }
+
+    fn write_as(
+        &self,
+        token: &str,
+        method: Method,
+        path: &str,
+        query: &Query,
+        body: Option<&Value>,
+        unconfirmed: Option<Fail>,
+    ) -> Result<Exchange> {
+        let exchange = match self.send_as(token, method, path, query, body) {
             // Token and identifier checks fail before sending; a failed or cancelled request may
             // have been sent.
             Err(cause) if cause == REQUEST_FAILED || cause == CANCELLED => {
@@ -425,6 +466,19 @@ impl Client {
         unconfirmed: Option<Fail>,
     ) -> Result<Value> {
         let exchange = self.write(method, path, query, body, unconfirmed)?;
+        self.written(exchange, schema, unconfirmed)
+    }
+
+    /// A money tool's one charge-bearing POST, sent with the token its gate read.
+    fn charge(&self, token: &str, path: &str, body: Option<&Value>, schema: &S) -> Result<Value> {
+        let unconfirmed = Some(WRITE_UNCONFIRMED);
+        let exchange =
+            self.write_as(token, Method::POST, path, &Query::new(), body, unconfirmed)?;
+        self.written(exchange, schema, unconfirmed)
+    }
+
+    /// The validated response of a sent write.
+    fn written(&self, exchange: Exchange, schema: &S, unconfirmed: Option<Fail>) -> Result<Value> {
         let unconfirmed = unconfirmed.unwrap_or(WRITE_UNCONFIRMED);
         let data = self.json(exchange, None).map_err(|_| unconfirmed)?;
         shapes::parse(schema, &data).ok_or(unconfirmed)
@@ -432,8 +486,8 @@ impl Client {
 
     /// Refuses unless the live checkout is the non-empty one, at the total, the user approved. The
     /// total is a consistency check, not a cap on the amount Krónan authorizes.
-    fn verify_checkout(&self, approval: &Approval) -> Result<Checkout> {
-        let current = self.get("/checkout/", &Query::new(), &shapes::CHECKOUT, None)?;
+    fn verify_checkout(&self, token: &str, approval: &Approval) -> Result<Checkout> {
+        let current = self.get_as(token, "/checkout/", &Query::new(), &shapes::CHECKOUT, None)?;
 
         if current["lines"].as_array().is_none_or(Vec::is_empty) {
             return Err(CHECKOUT_EMPTY);
@@ -456,13 +510,21 @@ impl Client {
     /// Claims the one attempt this approval allows, runs the gate, and sends one charge-bearing
     /// request. Gate and record refusals say nothing was sent; once the request may have left,
     /// every failure, 4xx included, is an unknown outcome (`None`).
+    ///
+    /// Rust: an intended difference from api.ts, which reads the saved token inside the request.
+    /// The gate reads it first, and the gate's reads and the request use that one token, so a
+    /// token store failure, such as a concurrent `auth set` holding the store, refuses with the
+    /// store's own message before any record is written, instead of recording an unknown outcome
+    /// for a request that never left.
     fn place(
         &self,
         tool: &'static str,
         approval: &Approval,
-        gate: impl FnOnce() -> Result<Checkout>,
-        request: impl FnOnce() -> Result<Value>,
+        gate: impl FnOnce(&str) -> Result<Checkout>,
+        request: impl FnOnce(&str) -> Result<Value>,
     ) -> Result<Option<Value>> {
+        let token = OnceCell::new();
+
         attempts::claim_attempt(
             &attempts::attempts_path()?,
             Claim {
@@ -470,12 +532,16 @@ impl Client {
                 expected_checkout_token: &approval.checkout_token,
                 cancel: &self.cancel,
                 gate: Box::new(|| {
-                    gate().map_err(|cause| match GATE_REFUSALS.contains(&cause) {
-                        true => cause,
-                        false => GATE_UNVERIFIED,
-                    })
+                    let loaded = self.token()?;
+                    let checkout =
+                        gate(&loaded).map_err(|cause| match GATE_REFUSALS.contains(&cause) {
+                            true => cause,
+                            false => GATE_UNVERIFIED,
+                        })?;
+                    let _ = token.set(loaded);
+                    Ok(checkout)
                 }),
-                send: Box::new(request),
+                send: Box::new(|| request(token.get().ok_or(Fail::Unknown)?)),
                 order_token: order_token_of,
             },
             &FileLock,
@@ -483,7 +549,12 @@ impl Client {
     }
 
     fn read_active_order(&self) -> Result<Value> {
-        let exchange = self.send(
+        self.read_active_order_as(&self.token()?)
+    }
+
+    fn read_active_order_as(&self, token: &str) -> Result<Value> {
+        let exchange = self.send_as(
+            token,
             Method::GET,
             "/orders/currently-active/",
             &Query::new(),
@@ -779,17 +850,8 @@ impl Client {
         let reservation = self.place(
             tool,
             approval,
-            || self.verify_checkout(approval),
-            || {
-                self.write_json(
-                    Method::POST,
-                    path,
-                    &Query::new(),
-                    Some(body),
-                    &shapes::RESERVE_RESPONSE,
-                    Some(WRITE_UNCONFIRMED),
-                )
-            },
+            |token| self.verify_checkout(token, approval),
+            |token| self.charge(token, path, Some(body), &shapes::RESERVE_RESPONSE),
         )?;
         Ok(match reservation {
             None => {
@@ -831,15 +893,13 @@ impl Client {
         let order = self.place(
             "complete_checkout",
             approval,
-            || self.verify_checkout(approval),
-            || {
-                self.write_json(
-                    Method::POST,
+            |token| self.verify_checkout(token, approval),
+            |token| {
+                self.charge(
+                    token,
                     "/checkout/complete/",
-                    &Query::new(),
                     Some(body),
                     &shapes::ORDER_TOKEN_RESPONSE,
-                    Some(WRITE_UNCONFIRMED),
                 )
             },
         )?;
@@ -854,9 +914,9 @@ impl Client {
         let order = self.place(
             "add_checkout_to_order",
             approval,
-            || {
-                let checkout = self.verify_checkout(approval)?;
-                let active = self.read_active_order()?;
+            |token| {
+                let checkout = self.verify_checkout(token, approval)?;
+                let active = self.read_active_order_as(token)?;
 
                 if active["order"].is_null() {
                     return Err(NO_ACTIVE_ORDER);
@@ -868,14 +928,12 @@ impl Client {
                 Ok(checkout)
             },
             // The endpoint documents no request body.
-            || {
-                self.write_json(
-                    Method::POST,
+            |token| {
+                self.charge(
+                    token,
                     "/checkout/add-to-order/",
-                    &Query::new(),
                     None,
                     &shapes::ORDER_TOKEN_RESPONSE,
-                    Some(WRITE_UNCONFIRMED),
                 )
             },
         )?;
