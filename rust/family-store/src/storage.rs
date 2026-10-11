@@ -887,4 +887,50 @@ mod tests {
             [PathBuf::from("/a/.config/abler-mcp")]
         );
     }
+
+    #[test]
+    fn a_key_whose_recognised_second_name_another_process_just_removed_passes() {
+        use std::io::Write;
+
+        use crate::files::{create_private, uuid};
+        use crate::keys::key_temporary;
+
+        let root =
+            std::env::temp_dir().join(format!("family-store-allow-link-{}", uuid().unwrap()));
+        DirBuilder::new().mode(0o700).create(&root).unwrap();
+        let key = root.join("test-mcp.default.key");
+        create_private(&key).unwrap().write_all(&[7; 32]).unwrap();
+        let temporary = root.join(format!("test-mcp.default.key.{}.tmp", uuid().unwrap()));
+        fs::hard_link(&key, &temporary).unwrap();
+
+        // The other process's recovery lands between this check's lstat and its own lookup.
+        let recovered = |file: &Path, info: &Metadata| -> Result<bool> {
+            let _ = fs::remove_file(&temporary);
+            Ok(key_temporary(file, info)?.is_some())
+        };
+        let files = [key.clone()];
+        let check = || {
+            check_store_paths(&StorePaths {
+                directories: &[],
+                files: &files,
+                create: false,
+                allow_link: Some(&recovered),
+            })
+        };
+        check().unwrap();
+        assert_eq!(fs::symlink_metadata(&key).unwrap().nlink(), 1);
+
+        // A second name that stays is still refused, also when the hook does not recognise it.
+        let stray = root.join("stray.key");
+        fs::hard_link(&key, &stray).unwrap();
+        let refused = check().unwrap_err();
+        assert_eq!(refused.code, Code::UnsafeFile);
+        assert_eq!(refused.message, LINKED_FILE);
+        assert_eq!(refused.path(), Some(key.as_path()));
+
+        for file in [&stray, &key] {
+            fs::remove_file(file).unwrap();
+        }
+        fs::remove_dir(&root).unwrap();
+    }
 }

@@ -126,6 +126,11 @@ fn records_round_trip_as_owner_only_ciphertext_with_a_committed_marker_per_gener
     let second = format!("{SECRET}-2");
     assert_eq!(put(&store, &second).unwrap(), Some(second.clone()));
     assert_eq!(read_secret_record(&store).unwrap(), second);
+    // An update that changes nothing returns the stored value.
+    assert_eq!(
+        with_secret_record(&store, |_| Ok::<_, Error>(None)).unwrap(),
+        Some(second.clone())
+    );
 
     let record = text(&store.path);
     assert!(!record.contains(SECRET));

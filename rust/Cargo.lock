@@ -380,6 +380,7 @@ dependencies = [
  "family-store",
  "getrandom 0.4.3",
  "rustix",
+ "serde_json",
  "zeroize",
 ]
 

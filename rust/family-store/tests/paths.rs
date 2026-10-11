@@ -289,3 +289,62 @@ fn no_source_file_reaches_the_keychain_or_security() {
         assert!(!text.contains("find-generic-password"));
     }
 }
+
+/// The cases above name their environment; this one reads it as a server does,
+/// `StoreEnvironment::current()` in a child given HOME, XDG and FAMILY_MCP_KEY_BACKEND, as the
+/// TypeScript cases set them.
+#[test]
+fn a_server_reads_home_xdg_and_the_key_backend_from_its_environment() {
+    let mac = cfg!(target_os = "macos");
+    for (seam, backend, expected) in [
+        (
+            "",
+            "",
+            if mac {
+                "/Users/scratch/Library/Application Support/family-mcp/keys/test-mcp.work.key \
+                 /Users/scratch/Library/Application Support/family-mcp/test-mcp/session.enc"
+            } else {
+                "/data/family-mcp/keys/test-mcp.work.key /config/test-mcp/session.enc"
+            },
+        ),
+        (
+            "1",
+            "file",
+            "/data/family-mcp/keys/test-mcp.work.key /config/test-mcp/session.enc",
+        ),
+        (
+            "",
+            "keychain",
+            "error:FAMILY_MCP_KEY_BACKEND is not supported. Set it to file or unset it.",
+        ),
+    ] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "print_the_store", "--ignored", "--nocapture"])
+            .env("HOME", "/Users/scratch")
+            .env("XDG_CONFIG_HOME", "/config")
+            .env("XDG_DATA_HOME", "/data")
+            .env("FAMILY_MCP_KEY_BACKEND", backend)
+            .env(family_store::TEST_SEAM, seam)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(&format!("store:{expected}\n")),
+            "{seam} {backend}: {stdout}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "run by a_server_reads_home_xdg_and_the_key_backend_from_its_environment"]
+fn print_the_store() {
+    let environment = StoreEnvironment::current();
+    match key_provider_in(&environment, "test-mcp", "work") {
+        Ok(keys) => println!(
+            "store:{} {}",
+            keys.key_file().unwrap().display(),
+            record_path(&environment).display()
+        ),
+        Err(error) => println!("store:error:{}", error.message),
+    }
+}

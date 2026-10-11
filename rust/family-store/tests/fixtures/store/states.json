@@ -1,0 +1,457 @@
+[
+  {
+    "id": "created",
+    "description": "createSecretKey only: a key and no record",
+    "layout": "explicit",
+    "written": [],
+    "files": [
+      "keys/test-mcp.default.key"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600"
+    },
+    "typescript": {
+      "read": "error:SECRET_NOT_FOUND",
+      "markerAfterRead": null,
+      "recordAfterRead": false,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "one-write",
+    "description": "one committed write",
+    "layout": "explicit",
+    "written": [
+      "from-ts-1"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "value:from-ts-1",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "three-writes",
+    "description": "three committed writes, the second and third not ASCII",
+    "layout": "explicit",
+    "written": [
+      "from-ts-1",
+      "frá-ts-2 þýðing 🔑",
+      "from-ts-3 ñ"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "value:from-ts-3 ñ",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":3}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":4}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "largest",
+    "description": "a committed write of exactly maxBytes (1024) bytes",
+    "layout": "explicit",
+    "written": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "value:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "pending-first",
+    "description": "a first write that stopped after its pending marker, before its record",
+    "layout": "explicit",
+    "written": [],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "error:SECRET_NOT_FOUND",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":false,\"generation\":0}\n",
+      "recordAfterRead": false,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "pending-later",
+    "description": "a second write that stopped after its pending marker, before its record",
+    "layout": "explicit",
+    "written": [
+      "one"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "value:one",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "pending-landed",
+    "description": "a second write whose record landed before its marker was committed",
+    "layout": "explicit",
+    "written": [
+      "one",
+      "two"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "value:two",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":3}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "pending-foreign",
+    "description": "a pending marker that announces a nonce the record does not have",
+    "layout": "explicit",
+    "written": [
+      "one",
+      "two"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1,\"pending\":{\"generation\":2,\"nonce\":\"AAAAAAAAAAAAAAAA\"}}\n",
+      "recordAfterRead": true,
+      "write": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1,\"pending\":{\"generation\":2,\"nonce\":\"AAAAAAAAAAAAAAAA\"}}\n",
+      "readAfterWrite": "error:STORE_WRITE_UNCERTAIN",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "marker-behind",
+    "description": "a record at generation 2 under a committed marker at generation 1",
+    "layout": "explicit",
+    "written": [
+      "one",
+      "two"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "readAfterWrite": "error:STORE_WRITE_UNCERTAIN",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "record-behind",
+    "description": "a record at generation 1 under a committed marker at generation 2",
+    "layout": "explicit",
+    "written": [
+      "one",
+      "two"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "recordAfterRead": true,
+      "write": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "error:STORE_WRITE_UNCERTAIN",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "lone-record",
+    "description": "a committed record whose marker is gone",
+    "layout": "explicit",
+    "written": [
+      "one"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc": "600"
+    },
+    "typescript": {
+      "read": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterRead": null,
+      "recordAfterRead": true,
+      "write": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterWrite": null,
+      "readAfterWrite": "error:STORE_WRITE_UNCERTAIN",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc"
+      ]
+    }
+  },
+  {
+    "id": "marker-only",
+    "description": "a committed marker at generation 1 whose record is gone",
+    "layout": "explicit",
+    "written": [
+      "one"
+    ],
+    "files": [
+      "keys/test-mcp.default.key",
+      "records/session.enc.marker"
+    ],
+    "modes": {
+      "keys/test-mcp.default.key": "600",
+      "records/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": false,
+      "write": "error:STORE_WRITE_UNCERTAIN",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "readAfterWrite": "error:STORE_WRITE_UNCERTAIN",
+      "files": [
+        "keys/test-mcp.default.key",
+        "records/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "layout-seam",
+    "description": "the default layout of test-mcp with the store test seam (absolute XDG folders)",
+    "layout": "seam",
+    "written": [
+      "from-ts-layout"
+    ],
+    "files": [
+      "config/test-mcp/session.enc",
+      "config/test-mcp/session.enc.marker",
+      "data/family-mcp/keys/test-mcp.default.key"
+    ],
+    "modes": {
+      "config/test-mcp/session.enc": "600",
+      "config/test-mcp/session.enc.marker": "600",
+      "data/family-mcp/keys/test-mcp.default.key": "600"
+    },
+    "typescript": {
+      "read": "value:from-ts-layout",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "config/test-mcp/session.enc",
+        "config/test-mcp/session.enc.marker",
+        "data/family-mcp/keys/test-mcp.default.key"
+      ]
+    }
+  },
+  {
+    "id": "layout-macos",
+    "description": "the default macOS layout of test-mcp under HOME (Application Support)",
+    "layout": "macos",
+    "written": [
+      "from-ts-layout"
+    ],
+    "files": [
+      "Library/Application Support/family-mcp/keys/test-mcp.default.key",
+      "Library/Application Support/family-mcp/test-mcp/session.enc",
+      "Library/Application Support/family-mcp/test-mcp/session.enc.marker"
+    ],
+    "modes": {
+      "Library/Application Support/family-mcp/keys/test-mcp.default.key": "600",
+      "Library/Application Support/family-mcp/test-mcp/session.enc": "600",
+      "Library/Application Support/family-mcp/test-mcp/session.enc.marker": "600"
+    },
+    "typescript": {
+      "read": "value:from-ts-layout",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        "Library/Application Support/family-mcp/keys/test-mcp.default.key",
+        "Library/Application Support/family-mcp/test-mcp/session.enc",
+        "Library/Application Support/family-mcp/test-mcp/session.enc.marker"
+      ]
+    }
+  },
+  {
+    "id": "layout-linux",
+    "description": "the default Linux layout of test-mcp under HOME (~/.config, ~/.local/share)",
+    "layout": "linux",
+    "written": [
+      "from-ts-layout"
+    ],
+    "files": [
+      ".config/test-mcp/session.enc",
+      ".config/test-mcp/session.enc.marker",
+      ".local/share/family-mcp/keys/test-mcp.default.key"
+    ],
+    "modes": {
+      ".config/test-mcp/session.enc": "600",
+      ".config/test-mcp/session.enc.marker": "600",
+      ".local/share/family-mcp/keys/test-mcp.default.key": "600"
+    },
+    "typescript": {
+      "read": "value:from-ts-layout",
+      "markerAfterRead": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":1}\n",
+      "recordAfterRead": true,
+      "write": "value:continued",
+      "markerAfterWrite": "{\"backend\":\"encrypted-file\",\"keySource\":\"local-file\",\"keyId\":\"local\",\"profile\":\"default\",\"migrated\":true,\"generation\":2}\n",
+      "readAfterWrite": "value:continued",
+      "files": [
+        ".config/test-mcp/session.enc",
+        ".config/test-mcp/session.enc.marker",
+        ".local/share/family-mcp/keys/test-mcp.default.key"
+      ]
+    }
+  }
+]

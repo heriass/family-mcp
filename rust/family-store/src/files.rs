@@ -144,7 +144,7 @@ pub fn read_private_bytes(path: &Path, max_bytes: usize) -> Result<Vec<u8>> {
         return Err(Error::new(Code::UnsafeFile, OPEN_FILE_FIX));
     }
 
-    if info.uid() != rustix::process::getuid().as_raw() {
+    if info.uid() != current_uid() {
         return Err(Error::new(Code::UnsafeFile, FOREIGN_FILE));
     }
 
@@ -173,6 +173,27 @@ pub fn read_private_bytes(path: &Path, max_bytes: usize) -> Result<Vec<u8>> {
         return Err(changed());
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test only: the uid [`read_private_bytes`] compares owners with on this thread, in place of
+    /// getuid, as the TypeScript test faked `process.getuid`.
+    static FAKE_UID: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+
+    /// Test only: run once by the writer on this thread after its temporary is written and
+    /// flushed, just before the commit-point cancel check.
+    static BEFORE_COMMIT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// This process's uid (a test may fake it on its own thread).
+fn current_uid() -> u32 {
+    #[cfg(test)]
+    if let Some(uid) = FAKE_UID.with(std::cell::Cell::get) {
+        return uid;
+    }
+    rustix::process::getuid().as_raw()
 }
 
 /// Replace `path` atomically with an owner-only file: an exclusive 0600 temporary is written and
@@ -206,6 +227,10 @@ fn replace(path: &Path, temporary: &Path, data: &[u8], cancel: &Cancel) -> Resul
             )
         })?;
     drop(file);
+    #[cfg(test)]
+    if let Some(hook) = BEFORE_COMMIT.with(|hook| hook.borrow_mut().take()) {
+        hook();
+    }
     // The rename is the commit point; a cancel observed here keeps the previous file.
     cancel.check()?;
     fs::rename(temporary, path).map_err(|error| {
@@ -320,5 +345,130 @@ pub fn sweep_temp(path: &Path, older_than: Duration) -> Result<usize> {
 pub(crate) fn sync_directory(directory: &Path) {
     if let Ok(handle) = File::open(directory) {
         let _ = handle.sync_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cancel_observed_at_the_commit_point_keeps_the_previous_file_and_no_temporary() {
+        let directory =
+            std::env::temp_dir().join(format!("family-store-commit-{}", uuid().unwrap()));
+        ensure_private_dir(&directory, false).unwrap();
+        let file = directory.join("session.json");
+        write_private_file(&file, b"previous", &Cancel::default()).unwrap();
+        let cancel = Cancel::default();
+        cancel.cancel();
+        assert_eq!(
+            write_private_file(&file, b"never", &cancel)
+                .unwrap_err()
+                .code,
+            Code::Cancelled
+        );
+
+        // `replace` checks only before the rename: the temporary is fully written and flushed,
+        // and the cancel is observed immediately before the commit point.
+        let temporary = suffixed(&file, &format!(".{}.tmp", uuid().unwrap()));
+        let committed = replace(&file, &temporary, b"never", &cancel);
+        assert_eq!(committed.unwrap_err().code, Code::Cancelled);
+        assert_eq!(fs::read(&temporary).unwrap(), b"never");
+        assert_eq!(read_private_file(&file, 64).unwrap(), "previous");
+
+        // The cleanup a cancelled commit relies on: a replacement that fails after its temporary
+        // was written (here the rename, onto a folder that is not empty) leaves no temporary.
+        fs::remove_file(&temporary).unwrap();
+        let occupied = directory.join("occupied");
+        fs::create_dir(&occupied).unwrap();
+        fs::write(occupied.join("inside"), "").unwrap();
+        assert!(write_private_file(&occupied, b"never", &Cancel::default()).is_err());
+        fs::remove_file(occupied.join("inside")).unwrap();
+        fs::remove_dir(&occupied).unwrap();
+        let names: Vec<_> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["session.json"]);
+        assert_eq!(read_private_file(&file, 64).unwrap(), "previous");
+        fs::remove_file(&file).unwrap();
+        fs::remove_dir(&directory).unwrap();
+    }
+
+    /// The names in `directory`, sorted.
+    fn names(directory: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn the_public_writer_cancelled_at_its_commit_point_keeps_the_previous_bytes_and_no_temporary() {
+        let directory =
+            std::env::temp_dir().join(format!("family-store-commit-hook-{}", uuid().unwrap()));
+        ensure_private_dir(&directory, false).unwrap();
+        let file = directory.join("session.json");
+        write_private_file(&file, b"previous", &Cancel::default()).unwrap();
+        let cancel = Cancel::default();
+        let cancelled = cancel.clone();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let (record, watched) = (seen.clone(), directory.clone());
+        // The cancel arrives after the writer's initial check, once its temporary is written.
+        BEFORE_COMMIT.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                *record.borrow_mut() = names(&watched);
+                cancelled.cancel();
+            }));
+        });
+
+        assert_eq!(
+            write_private_file(&file, b"never", &cancel)
+                .unwrap_err()
+                .code,
+            Code::Cancelled
+        );
+        // The hook ran: the temporary existed beside the file when the cancel came.
+        let before = seen.borrow().clone();
+        assert_eq!(before.len(), 2, "{before:?}");
+        assert!(
+            before[1].starts_with("session.json.") && before[1].ends_with(".tmp"),
+            "{before:?}"
+        );
+        // No manual cleanup: the writer itself left exactly the previous file.
+        assert_eq!(names(&directory), ["session.json"]);
+        assert_eq!(fs::read(&file).unwrap(), b"previous");
+        fs::remove_file(&file).unwrap();
+        fs::remove_dir(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_file_owned_by_another_user_is_refused_by_the_reader_itself() {
+        let directory =
+            std::env::temp_dir().join(format!("family-store-foreign-{}", uuid().unwrap()));
+        ensure_private_dir(&directory, false).unwrap();
+        let file = directory.join("session.json");
+        write_private_file(&file, b"private", &Cancel::default()).unwrap();
+        assert_eq!(read_private_file(&file, 1024).unwrap(), "private");
+
+        // As if the file belonged to another user: this thread's uid differs from its owner's.
+        let owner = fs::metadata(&file).unwrap().uid();
+        FAKE_UID.with(|uid| uid.set(Some(owner + 1)));
+        let refused = read_private_file(&file, 1024).unwrap_err();
+        let bytes = read_private_bytes(&file, 1024).unwrap_err();
+        FAKE_UID.with(|uid| uid.set(None));
+        assert_eq!(
+            (refused.code, refused.message),
+            (Code::UnsafeFile, FOREIGN_FILE)
+        );
+        assert_eq!(
+            (bytes.code, bytes.message),
+            (Code::UnsafeFile, FOREIGN_FILE)
+        );
+        assert_eq!(read_private_file(&file, 1024).unwrap(), "private");
+        fs::remove_file(&file).unwrap();
+        fs::remove_dir(&directory).unwrap();
     }
 }
