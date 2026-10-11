@@ -84,6 +84,14 @@ proceed for accounts with several students. A user confirmed switching between
 two students on a real account that day, so the pages no longer call it
 unconfirmed. Google's acceptance of the sign-in window is not yet verified live.
 
+Release snapshot, verified via GitHub API on 2026-10-11: Abler 0.7.1 and
+InfoMentor 0.9.1 stable; Inna 0.4.1, Krónan 0.3.1 and Domino’s 0.2.0 preview.
+All five are published full releases and all five native executables are now
+compiled from Rust. Sign-in saves Abler, InfoMentor and Krónan credentials in an
+encrypted store, so the agent prompts no longer describe the older session and
+token environment variables as the files sign-in saves. Both pages were built
+and checked against these version and installer pins.
+
 ## Product Principles
 
 - Keep the introduction and path to installation short.

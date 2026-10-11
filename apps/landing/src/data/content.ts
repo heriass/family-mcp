@@ -44,8 +44,8 @@ const abler: AgentSetup = {
   ],
   register: [
     claudeCode,
-    '   claude mcp add abler -e ABLER_SESSION_FILE=/absolute/path/abler-session.json -- /absolute/path/to/.local/bin/abler-mcp serve',
-    `   ${placeholders} ABLER_SESSION_FILE is the session file that sign-in reported saving.`,
+    '   claude mcp add abler -- /absolute/path/to/.local/bin/abler-mcp serve',
+    `   ${placeholders}`,
     `   ${otherClients}`,
   ],
   rules: [],
@@ -61,7 +61,7 @@ const infomentor: AgentSetup = {
   register: [
     claudeCode,
     '   claude mcp add infomentor -e INFOMENTOR_SESSION_PATH=/absolute/path/infomentor-session.json -e INFOMENTOR_CREDENTIALS_FILE=/absolute/path/credentials.json -- /absolute/path/to/.local/bin/infomentor-mcp serve',
-    `   ${placeholders} INFOMENTOR_SESSION_PATH is the session file that sign-in reported saving; INFOMENTOR_CREDENTIALS_FILE is my credentials file.`,
+    `   ${placeholders} Sign-in saves the session in an encrypted store; INFOMENTOR_SESSION_PATH names an older version’s plaintext session file and also places collection snapshots. INFOMENTOR_CREDENTIALS_FILE is my credentials file, used for renewal only when no sign-in is stored.`,
     `   ${otherClients}`,
   ],
   rules: ['Do not enable --allow-setup-tools or --allow-account-change unless I ask for it.'],
@@ -95,7 +95,7 @@ const kronan: AgentSetup = {
   register: [
     claudeCode,
     '   claude mcp add kronan -e KRONAN_TOKEN_FILE=/absolute/path/kronan-token.json -- /absolute/path/to/.local/bin/kronan-mcp serve',
-    `   ${placeholders} KRONAN_TOKEN_FILE is the token file that sign-in reported saving.`,
+    `   ${placeholders} Sign-in saves the token in an encrypted store; KRONAN_TOKEN_FILE names an older version’s plaintext token file and also places the order-attempt record. If I set KRONAN_TOKEN_FILE for kronan-mcp auth set, use the same value.`,
     `   ${otherClients}`,
   ],
   rules: [

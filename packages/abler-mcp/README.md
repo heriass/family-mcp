@@ -1,6 +1,6 @@
 # abler-mcp
 
-Unofficial, read-only [Abler](https://www.abler.io) schedules and messages MCP server. Written in TypeScript and compiled with Bun into a single executable, including its runtime and dependencies. The running MCP server uses HTTP and needs no browser.
+Unofficial, read-only [Abler](https://www.abler.io) schedules and messages MCP server. The release is a single native executable compiled from Rust; it needs no Node, npm, or Bun at runtime. The running MCP server uses HTTP and needs no browser.
 
 For agent setup and reporting rules, read **[docs/AGENTS.md](docs/AGENTS.md)**.
 
@@ -391,8 +391,8 @@ The Chrome capture transport is covered by a local protocol test; live session c
 ## Development and packaging
 
 Maintainers use the pinned Bun 1.4.2 toolchain. Oxlint, Oxfmt, the type-aware
-lint engine, and TypeScript are pinned in the repository root. Consumers run the
-standalone Bun executable.
+lint engine, and TypeScript are pinned in the repository root. The release
+executable is a native Rust binary; consumers need neither Bun nor Node.
 
 The server uses the [official MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/v2/get-started/first-server), native `fetch`, `tough-cookie` for cookie handling, and the private `@family-mcp/session-store` workspace package for locking, owner-only files and the encrypted session record (its README states the security contract). No browser dependency or download is required.
 
@@ -433,9 +433,9 @@ Every tool declares a strict output schema and returns validated `structuredCont
 This project is not affiliated with or endorsed by Abler.
 
 `bun run build:binary` creates a standalone executable and checksummed archive
-for the current machine in `release/`. It uses [Bun's compiler](https://bun.com/docs/bundler/executables),
-with automatic `.env` and `bunfig.toml` loading disabled. Configuration comes
-from the process environment. GitHub Actions builds and checks macOS 15 and
+for the current machine in `release/`. It compiles the Rust crate in
+`rust/abler-mcp` (`familyMcp.release.rust`) with the toolchain that
+`rust/rust-toolchain.toml` pins. Configuration comes from the process environment. GitHub Actions builds and checks macOS 15 and
 Ubuntu 24.04 on both CPU architectures, including a copied executable running
 outside the checkout without the repository toolchain.
 
