@@ -4,7 +4,7 @@ set -eu
 
 # Do not execute a partial script when invoked through curl | sh.
 main() {
-  version=${INFOMENTOR_VERSION:-0.9.1}
+  version=${INFOMENTOR_VERSION:-0.9.2}
   prefix=${INFOMENTOR_PREFIX:-${HOME:?Set HOME or INFOMENTOR_PREFIX}/.local}
   case "$version" in ''|*[!0-9A-Za-z.+-]*) echo 'Invalid INFOMENTOR_VERSION.' >&2; exit 1 ;; esac
   case "$prefix" in /*) ;; *) echo 'INFOMENTOR_PREFIX must be an absolute path.' >&2; exit 1 ;; esac

@@ -97,6 +97,13 @@ the home. One transport detail is not compared: a request with an empty body car
 header from both sides when the body is empty. Every other header and every body is compared as
 recorded.
 
+The package version is replaced, not normalized in the fixtures: the freeze recorded dominos-mcp
+0.2.0, as `--version` and `-v` stdout (`0.2.0\n`) and as the `initialize` answer's
+`result.serverInfo.version`. At those two fields only, the replay requires exactly that recorded
+value and expects this binary's own version (`CARGO_PKG_VERSION`) in the same format instead;
+a different recorded value or format, a missing field, or a wrong binary version fails
+(`only_the_recorded_version_becomes_the_binary_version`). The fixture bytes are unchanged.
+
 Nothing else is normalized. Tool answers are compared value for value, key order included. The
 `initialize` and `tools/list` answers are compared as values: rmcp orders schema keys differently
 from zod, parity.ts compared the surfaces as values, and `src/surface.json` pins the contract on

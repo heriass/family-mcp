@@ -1,7 +1,7 @@
 # Release process
 
 Source: https://github.com/olafurns7/family-mcp/tree/main/packages/abler-mcp
-Tags use `abler-mcp@<version>`; the current version is `abler-mcp@0.7.1`.
+Tags use `abler-mcp@<version>`; the current version is `abler-mcp@0.7.2`.
 Native binaries are the only distribution.
 
 1. Bump this package's `version` in `package.json`.
@@ -14,7 +14,7 @@ Native binaries are the only distribution.
 8. Publish the draft release.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/abler-mcp@0.7.1/packages/abler-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/abler-mcp@0.7.2/packages/abler-mcp/install.sh | sh
 ```
 
 Archives contain the executable, README, LICENSE, and generated third-party

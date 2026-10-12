@@ -1,6 +1,6 @@
 {
   "name": "abler-mcp",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Unofficial, read-only Abler schedules and messages MCP server with portable session authentication",
   "keywords": [
     "abler",

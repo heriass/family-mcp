@@ -27,6 +27,7 @@
 mod support;
 
 use std::fs;
+use std::panic::catch_unwind;
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -102,6 +103,10 @@ const KEEP_ALIVE_TEXT: [&str; 2] = [
     "Disable optional 10-minute touches; mandatory renewal still runs before 30 minutes",
     "Do not touch the saved session every 10 minutes while serving",
 ];
+
+/// The package version the freeze recorded at 41d6f98: `--version` printed it and `initialize`
+/// named it in `serverInfo.version`. The replay expects this binary's own version there instead.
+const RECORDED_VERSION: &str = "0.4.1";
 
 fn frozen(set: &str, name: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -224,9 +229,14 @@ fn replay_case(set: &str, name: &str, coverage: &mut Coverage, tz: Option<&str>)
                     "{at}: printed {absent:?}"
                 );
             }
+            let stdout = if asks_version(&args) {
+                own_version_line(&step["stdout"])
+            } else {
+                step["stdout"].clone()
+            };
             assert_eq!(
                 json!({"code": run.code, "stdout": named(&names, &run.stdout), "stderr": named(&names, &run.stderr)}),
-                json!({"code": step["code"], "stdout": step["stdout"], "stderr": step["stderr"]}),
+                json!({"code": step["code"], "stdout": stdout, "stderr": step["stderr"]}),
                 "{at} {args:?}"
             );
         } else if step.get("serve").is_some() {
@@ -330,7 +340,7 @@ fn surface(names: &Names, mcp: &mut Mcp, initialized: &Answer, step: &Value, at:
         same_answer(
             names,
             &initialized.line,
-            expected,
+            &own_server_info(expected),
             &format!("{at} initialize"),
             false,
         );
@@ -487,6 +497,38 @@ fn cancel(
     );
 }
 
+/// A version request, whose stdout is the only CLI output that names the version.
+fn asks_version(args: &[&str]) -> bool {
+    matches!(args, ["--version"] | ["-v"])
+}
+
+/// The recorded `--version` stdout, which must be exactly the recorded version and a newline, as
+/// this binary's version in that format.
+fn own_version_line(recorded: &Value) -> Value {
+    assert_eq!(
+        recorded,
+        &json!(format!("{RECORDED_VERSION}\n")),
+        "recorded --version stdout"
+    );
+    json!(format!("{}\n", env!("CARGO_PKG_VERSION")))
+}
+
+/// The recorded `initialize` answer line with this binary's version in `result.serverInfo.version`,
+/// which must hold exactly the recorded version. Nothing else changes.
+fn own_server_info(recorded: &Value) -> Value {
+    let mut answer: Value = serde_json::from_str(recorded.as_str().unwrap()).unwrap();
+    let version = answer
+        .pointer_mut("/result/serverInfo/version")
+        .expect("recorded serverInfo.version");
+    assert_eq!(
+        version,
+        &json!(RECORDED_VERSION),
+        "recorded serverInfo.version"
+    );
+    *version = json!(env!("CARGO_PKG_VERSION"));
+    json!(answer.to_string())
+}
+
 /// The `.json` files in `fixtures/<set>`, which must be exactly `names`.
 fn fixtures_are(set: &str, names: &[&str]) {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -637,5 +679,55 @@ fn the_fake_rejects_a_recovery_unlike_the_recorded_request() {
 
     for (label, requests) in rejected {
         assert!(!play(label, &requests).0, "{label} passed");
+    }
+}
+
+/// Only the recorded version becomes the binary's: a recorded value in another format or of another
+/// version, a missing field, any other `serverInfo` difference, or a wrong binary version still fails.
+#[test]
+fn only_the_recorded_version_becomes_the_binary_version() {
+    let own = env!("CARGO_PKG_VERSION");
+    assert!(asks_version(&["--version"]) && asks_version(&["-v"]));
+    assert!(!asks_version(&["--help"]) && !asks_version(&["--version", "serve"]));
+
+    let line = own_version_line(&json!(format!("{RECORDED_VERSION}\n")));
+    assert_eq!(line, json!(format!("{own}\n")));
+    assert_ne!(line, json!("9.9.9\n"));
+
+    for recorded in [
+        json!(RECORDED_VERSION),
+        json!(format!("v{RECORDED_VERSION}\n")),
+        json!("9.9.9\n"),
+        Value::Null,
+    ] {
+        assert!(
+            catch_unwind(|| own_version_line(&recorded)).is_err(),
+            "{recorded}"
+        );
+    }
+
+    let initialize = |name: &str, version: Value| {
+        json!(json!({"jsonrpc": "2.0", "id": 0, "result": {"serverInfo": {"name": name, "version": version}}}).to_string())
+    };
+    let answer = own_server_info(&initialize("inna-mcp", json!(RECORDED_VERSION)));
+    assert_eq!(answer, initialize("inna-mcp", json!(own)));
+    assert_ne!(answer, initialize("inna-mcp", json!("9.9.9")));
+    assert_ne!(
+        own_server_info(&initialize("other-mcp", json!(RECORDED_VERSION))),
+        initialize("inna-mcp", json!(own))
+    );
+
+    for recorded in [
+        initialize("inna-mcp", json!(format!("{RECORDED_VERSION}-rc.1"))),
+        initialize("inna-mcp", json!("9.9.9")),
+        json!(
+            json!({"jsonrpc": "2.0", "id": 0, "result": {"serverInfo": {"name": "inna-mcp"}}})
+                .to_string()
+        ),
+    ] {
+        assert!(
+            catch_unwind(|| own_server_info(&recorded)).is_err(),
+            "{recorded}"
+        );
     }
 }

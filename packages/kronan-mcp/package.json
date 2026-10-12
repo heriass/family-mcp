@@ -1,6 +1,6 @@
 {
   "name": "kronan-mcp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Unofficial Krónan grocery MCP server for products, the shopping note, the basket, and confirmed orders, using a personal Krónan API access token",
   "keywords": [
     "family",

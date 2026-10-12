@@ -1,6 +1,6 @@
 {
   "name": "dominos-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Unofficial Domino’s Iceland MCP with SMS login, menu, cart quotes, and saved-card checkout",
   "license": "MIT",
   "author": "Ólafur Nils Sigurðsson",

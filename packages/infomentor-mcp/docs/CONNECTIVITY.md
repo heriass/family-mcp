@@ -43,7 +43,7 @@ First check whether ordinary access already works. A working host does not need
 this override. On Linux, release 0.8.0 and later can apply the tested route:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.1/packages/infomentor-mcp/install.sh | sh -s -- --with-direct-route
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.2/packages/infomentor-mcp/install.sh | sh -s -- --with-direct-route
 ```
 
 The installer requires `/usr/bin/python3` and administrator or `sudo` access.
@@ -67,7 +67,7 @@ installer if the upstream address changes.
 To remove the managed entry and return to ordinary DNS:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.1/packages/infomentor-mcp/install.sh | sh -s -- --without-direct-route
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.2/packages/infomentor-mcp/install.sh | sh -s -- --without-direct-route
 ```
 
 Switching a saved direct-route install to WARP or ordinary direct mode also

@@ -95,3 +95,5 @@ compared headers, and body. That includes each sign-in's island.is and inna.is r
 bearer token. The binary's poll waits are real (2 and 3 seconds per sign-in), as the TypeScript
 side's were. `initialize` and `tools/list` are compared by value only; tool answers by value and
 key order.
+The recorded package version in `--version` stdout and `serverInfo.version` is replaced as
+`../parity/PROVENANCE.md` describes.

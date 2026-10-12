@@ -4,7 +4,7 @@ set -eu
 
 # Do not execute a partial script when invoked through curl | sh.
 main() {
-  version=${INNA_VERSION:-0.4.1}
+  version=${INNA_VERSION:-0.4.2}
   prefix=${INNA_PREFIX:-${HOME:?Set HOME or INNA_PREFIX}/.local}
   case "$version" in ''|*[!0-9A-Za-z.+-]*) echo 'Invalid INNA_VERSION.' >&2; exit 1 ;; esac
   case "$prefix" in /*) ;; *) echo 'INNA_PREFIX must be an absolute path.' >&2; exit 1 ;; esac

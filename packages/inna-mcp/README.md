@@ -6,7 +6,7 @@ attendance, material metadata, messages, announcements, and absence history.
 Whole-day illness registration and leave applications are an explicit opt-in.
 A guardian's session can read [several students](#several-students).
 
-The current preview is `inna-mcp@0.4.1`. The read endpoints
+The current preview is `inna-mcp@0.4.2`. The read endpoints
 were captured in a real guardian account. Electronic-ID login and private session
 reuse were verified through the initial 0.1.0 compiled native CLI; the 0.1.1
 parsing and repeated-read changes are checked offline. Absence creation is based
@@ -20,7 +20,7 @@ release checksum, and installs `~/.local/bin/inna-mcp`. No Node, npm, or Bun is
 needed at runtime.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/inna-mcp@0.4.1/packages/inna-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/inna-mcp@0.4.2/packages/inna-mcp/install.sh | sh
 ```
 
 Upgrading replaces the command but not a running server. Restart the MCP host,

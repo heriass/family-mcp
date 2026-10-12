@@ -4,7 +4,7 @@ set -eu
 
 # Do not execute a partial script when invoked through curl | sh.
 main() {
-  version=${KRONAN_VERSION:-0.3.1}
+  version=${KRONAN_VERSION:-0.3.2}
   prefix=${KRONAN_PREFIX:-${HOME:?Set HOME or KRONAN_PREFIX}/.local}
   case "$version" in ''|*[!0-9A-Za-z.+-]*) echo 'Invalid KRONAN_VERSION.' >&2; exit 1 ;; esac
   case "$prefix" in /*) ;; *) echo 'KRONAN_PREFIX must be an absolute path.' >&2; exit 1 ;; esac

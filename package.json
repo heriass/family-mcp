@@ -16,6 +16,7 @@
     "format:root": "oxfmt --write package.json turbo.json .oxlintrc.json .oxfmtrc.json .github tooling",
     "format:root:check": "oxfmt --check package.json turbo.json .oxlintrc.json .oxfmtrc.json .github tooling",
     "release:sync": "turbo run release:sync --filter=abler-mcp --filter=infomentor-mcp --filter=inna-mcp --filter=kronan-mcp --filter=dominos-mcp",
+    "release:check": "turbo run release:check --filter=abler-mcp --filter=infomentor-mcp --filter=inna-mcp --filter=kronan-mcp --filter=dominos-mcp",
     "release:sync:root": "node tooling/release/sync-root-readme.mjs",
     "release:check:root": "node tooling/release/sync-root-readme.mjs --check"
   },

@@ -4,7 +4,7 @@ set -eu
 
 # Do not execute a partial script when invoked through curl | sh.
 main() {
-  version=${ABLER_VERSION:-0.7.1}
+  version=${ABLER_VERSION:-0.7.2}
   prefix=${ABLER_PREFIX:-${HOME:?Set HOME or ABLER_PREFIX}/.local}
   case "$version" in ''|*[!0-9A-Za-z.+-]*) echo 'Invalid ABLER_VERSION.' >&2; exit 1 ;; esac
   case "$prefix" in /*) ;; *) echo 'ABLER_PREFIX must be an absolute path.' >&2; exit 1 ;; esac

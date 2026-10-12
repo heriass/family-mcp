@@ -2,7 +2,7 @@
 
 Unofficial Domino’s Iceland MCP: SMS sign-in, menu discovery, pickup and delivery
 quotes, receipts, tracking, and saved-card checkout through Domino’s Adyen sessions.
-This is a **preview release** (`dominos-mcp@0.2.0`).
+This is a **preview release** (`dominos-mcp@0.2.1`).
 
 The earlier TypeScript preview’s live checks verified SMS login, token refresh, profile and receipts, the tracker’s
 no-active-order response, menu/address lookup, a 2,490 ISK quote, and an unpaid
@@ -20,7 +20,7 @@ it stops at `requires_action`. Do not treat this preview as fully verified order
 Install the standalone executable for macOS or glibc Linux, arm64/x64:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/dominos-mcp@0.2.0/packages/dominos-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/dominos-mcp@0.2.1/packages/dominos-mcp/install.sh | sh
 dominos-mcp auth login
 dominos-mcp auth status
 ```

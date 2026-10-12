@@ -4,7 +4,7 @@ set -eu
 
 # Do not execute a partial script when invoked through curl | sh.
 main() {
-  version=${DOMINOS_VERSION:-0.2.0}
+  version=${DOMINOS_VERSION:-0.2.1}
   prefix=${DOMINOS_PREFIX:-${HOME:?Set HOME or DOMINOS_PREFIX}/.local}
   case "$version" in ''|*[!0-9A-Za-z.+-]*) echo 'Invalid DOMINOS_VERSION.' >&2; exit 1 ;; esac
   case "$prefix" in /*) ;; *) echo 'DOMINOS_PREFIX must be an absolute path.' >&2; exit 1 ;; esac

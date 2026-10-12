@@ -19,7 +19,7 @@ it is not affiliated with InfoMentor.
 ## Quick start
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.1/packages/infomentor-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.2/packages/infomentor-mcp/install.sh | sh
 ```
 
 ```sh
@@ -67,7 +67,7 @@ Use the standard install on a working connection. For Grok Bot or another Linux
 host where the normal school connection fails, try the verified alternate route:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.1/packages/infomentor-mcp/install.sh | sh -s -- --with-direct-route
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.2/packages/infomentor-mcp/install.sh | sh -s -- --with-direct-route
 ```
 
 This requires `/usr/bin/python3` and administrator or `sudo` access. The installer
@@ -87,7 +87,7 @@ network path fails before HTTP. It worked in an earlier test, but a later
 healthy tunnel could not reach either school host. If testing WARP, use:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.1/packages/infomentor-mcp/install.sh | sh -s -- --with-warp
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.2/packages/infomentor-mcp/install.sh | sh -s -- --with-warp
 ```
 
 It requires administrator or `sudo` access and acceptance of
@@ -97,7 +97,7 @@ It does not change the default route or Tailscale settings. To revert to direct
 access:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.1/packages/infomentor-mcp/install.sh | sh -s -- --without-warp
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/infomentor-mcp@0.9.2/packages/infomentor-mcp/install.sh | sh -s -- --without-warp
 ```
 
 Do not use WARP on a normal working connection, on a non-Debian-13-x64 machine,

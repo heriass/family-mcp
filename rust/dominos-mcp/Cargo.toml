@@ -1,6 +1,6 @@
 [package]
 name = "dominos-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Unofficial Domino’s Iceland MCP server"
 edition.workspace = true
 rust-version.workspace = true

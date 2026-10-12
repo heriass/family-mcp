@@ -101,6 +101,13 @@ Long runs of one character inside a string are packed as U+0001, the character, 
 U+0001. The sentinel is U+0001 because login-input's standard input holds a NUL. The replay expands
 the runs.
 
+The package version is replaced, not normalized in the fixtures: the freeze recorded inna-mcp
+0.4.1, as `--version` and `-v` stdout (`0.4.1\n`) and as the `initialize` answer's
+`result.serverInfo.version`. At those two fields only, the replay requires exactly that recorded
+value and expects this binary's own version (`CARGO_PKG_VERSION`) in the same format instead;
+a different recorded value or format, a missing field, or a wrong binary version fails
+(`only_the_recorded_version_becomes_the_binary_version`). The fixture bytes are unchanged.
+
 ## What the replay allows, and what it relaxes
 
 - **The recovery hop.** parity.ts let the binary renew once after any GET answered 401 and then

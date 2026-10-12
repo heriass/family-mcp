@@ -1,6 +1,6 @@
 # Release process
 
-The current preview is `dominos-mcp@0.2.0`. Native binaries are the only
+The current preview is `dominos-mcp@0.2.1`. Native binaries are the only
 distribution. The executable is now built from `rust/dominos-mcp`, using the
 pinned Rust compiler, locked dependencies and rustls, with default features only.
 Bun runs the retained TypeScript reference and offline parity fixtures; it is not
@@ -34,7 +34,7 @@ it. Wait for the draft release, verify all four archives, checksums, and install
 then publish it as a prerelease.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/dominos-mcp@0.2.0/packages/dominos-mcp/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/olafurns7/family-mcp/dominos-mcp@0.2.1/packages/dominos-mcp/install.sh | sh
 ```
 
 Archives contain the executable, README, LICENSE, and generated dependency

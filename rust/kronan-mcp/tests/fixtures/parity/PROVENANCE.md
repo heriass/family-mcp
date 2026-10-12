@@ -54,6 +54,13 @@ they are not regenerated.
   generator refuses to run if any recorded value holds a NUL, and the replay expands the runs
   before comparing.
 
+The package version is replaced, not normalized in the fixtures: the freeze recorded kronan-mcp
+0.3.1, as `--version` and `-v` stdout (`0.3.1\n`) and as the `initialize` answer's
+`result.serverInfo.version`. At those two fields only, the replay requires exactly that recorded
+value and expects this binary's own version (`CARGO_PKG_VERSION`) in the same format instead;
+a different recorded value or format, a missing field, or a wrong binary version fails
+(`only_the_recorded_version_becomes_the_binary_version`). The fixture bytes are unchanged.
+
 Nothing else is normalized. Tool answers are compared value for value and key order included.
 The `tools/list` and `initialize` answers are compared as values: rmcp orders schema keys
 differently from zod, parity.ts never compared that order, and `tests/surface.rs` checks the
