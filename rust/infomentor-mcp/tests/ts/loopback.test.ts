@@ -111,8 +111,11 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
 
     if (url.pathname === '/' && method === 'GET') return new Response(parentHtml);
 
-    if (url.pathname === '/authentication/authentication/isauthenticated/')
+    if (url.pathname === '/authentication/authentication/isauthenticated/') {
+      assert.equal(new Headers(init.headers).get('content-length'), '0');
+      assert.equal(new Headers(init.headers).get('transfer-encoding'), null);
       return new Response('true');
+    }
 
     return new Response('unexpected', { status: 404 });
   };
