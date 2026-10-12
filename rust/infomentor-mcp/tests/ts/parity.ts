@@ -1315,7 +1315,7 @@ function masker(): (value: unknown) => unknown {
       if (TIMES.has(key)) return '<time>';
       if (['timeSent','dateSent'].includes(key)) return '<school-date>'; 
       // Full-content privacy removes URL queries/fragments; compare the safe path on both sides.
-      if (key === 'url') return new URL(value, PARENT).pathname;
+      if (key === 'url' && value.startsWith('/#/')) return value.split('#')[0];
 
       // The pause InfoMentor asked for, capped at an hour: compared to the nearest ten minutes.
       if (key === 'rateLimitedUntil')
