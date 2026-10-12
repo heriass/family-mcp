@@ -370,6 +370,8 @@ function fixture() {
       });
     }
 
+    if (input.pathname === '/home/home/appData') return Response.json({urls: {notificationAppData: '/NotificationApp/NotificationApp/appData'}});
+
     if (input.pathname === '/NotificationApp/NotificationApp/appData') {
       assert.equal(method, 'POST');
 
@@ -455,10 +457,11 @@ test('assessment reads select children, navigate years, fetch all kinds and refu
       return Response.json({ ...overview, urls: { ...urls, getGridItems: link } });
     }
     if (url.pathname === '/assessmentv2/assessmentv2/getNavigationData') {
-      assert.equal(new URLSearchParams(String(init.body)).get('academicYearId'), '2025');
+      assert.equal(new Headers(init.headers).get('content-type'), 'application/json');
+      assert.equal(JSON.parse(String(init.body)).academicYearId, '2025');
       return Response.json({ ...overview, year: '2025', subjects: [{ name: 'Stærðfræði' }] });
     }
-    assert.ok(actions.some(action => url.pathname === `/assessmentv2/assessmentv2/${action}/41`));
+    assert.ok(actions.some(action => [41,55].some(id => url.pathname === `/assessmentv2/assessmentv2/${action}/${id}`)));
     assert.equal(init.body ?? '', '');
     assert.equal(new Headers(init.headers).get('content-length'), '0');
     if (mode === 'redirect') return new Response(null, { status: 307, headers: { Location: '/assessmentv2/assessmentv2/save' } });
@@ -491,7 +494,7 @@ test('assessment reads select children, navigate years, fetch all kinds and refu
       const detail = await call('infomentor_get_assessment_item', { kind, id: 41 });
       assert.ok(!detail.isError);
       assert.equal(detail.structuredContent?.childId, 'second');
-      assert.equal((detail.structuredContent?.data as { teacherComment: string }).teacherComment, 'Good progress');
+      assert.equal((detail.structuredContent?.data as { item:{teacherComment:string} }).item.teacherComment, 'Good progress');
       assert.ok(!JSON.stringify(detail).includes('private'));
     }
     for (const bad of ['evil', 'write', 'redirect', 'error', 'malformed']) {
@@ -501,7 +504,7 @@ test('assessment reads select children, navigate years, fetch all kinds and refu
       assert.ok(!JSON.stringify(detail).includes('private'), bad);
     }
     mode = 'large';
-    const large = await call('infomentor_get_assessment_item', { kind: 'grid', id: 41 });
+    const large = await call('infomentor_get_assessment_item', { kind: 'grid', id: 41, max_chars:1000 });
     assert.ok(!large.isError);
     assert.equal(large.structuredContent?.truncated, true);
     assert.equal(large.structuredContent?.schemaKnown, false);
@@ -549,11 +552,20 @@ test('private login and eleven MCP tools select children and read school data wi
       assert.deepEqual(
         (await readOnlyClient.listTools()).tools.map((tool) => tool.name).toSorted(),
         [
+          'infomentor_app_data',
+          'infomentor_app_get',
           'infomentor_collect_updates',
+          'infomentor_get_assignment',
+          'infomentor_get_assignments',
           'infomentor_get_assessment_item',
           'infomentor_get_assessments',
+          'infomentor_get_calendar',
+          'infomentor_get_calendar_entry',
+          'infomentor_get_homework',
+          'infomentor_get_homework_item',
           'infomentor_get_message',
           'infomentor_get_messages',
+          'infomentor_get_news',
           'infomentor_get_notifications',
           'infomentor_get_overview',
           'infomentor_select_child',
@@ -601,7 +613,7 @@ test('private login and eleven MCP tools select children and read school data wi
     server = await serveStdio({ sessionFile: file, allowSetupTools: true, fetch: routes.fetch });
     await client.connect(server.transport);
     const tools = (await client.listTools()).tools;
-    assert.equal(tools.length, 13);
+    assert.equal(tools.length, 22);
     assert.ok(tools.every((tool) => tool.outputSchema));
     assert.ok(!tools.some((tool) => tool.name.includes('browser')));
     const loginTool = tools.find((tool) => tool.name === 'infomentor_login');
@@ -673,7 +685,7 @@ test('private login and eleven MCP tools select children and read school data wi
     });
 
     const listed = messagesSchema.parse(messagesResult.structuredContent);
-    assert.deepEqual(listed.items, [message]);
+    assert.deepEqual(listed.items, [{...message, timeSent:'2026-09-11T09:00:00.000Z'}]);
     assert.equal(listed.page, 2);
     assert.equal(listed.more, true);
 
@@ -759,7 +771,7 @@ test('private login and eleven MCP tools select children and read school data wi
       arguments: { folder: 'sent', search: 'Skólaferð & nesti', page: 2, pageSize: 1 },
     });
 
-    assert.deepEqual(messagesSchema.parse(siblingMessages.structuredContent).items, [message]);
+    assert.deepEqual(messagesSchema.parse(siblingMessages.structuredContent).items, [{...message,timeSent:'2026-09-11T09:00:00.000Z'}]);
 
     const unknownChild = await client.callTool({
       name: 'infomentor_select_child',
