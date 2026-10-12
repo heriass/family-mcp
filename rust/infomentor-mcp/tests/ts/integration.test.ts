@@ -555,10 +555,10 @@ test('private login and eleven MCP tools select children and read school data wi
           'infomentor_app_data',
           'infomentor_app_get',
           'infomentor_collect_updates',
-          'infomentor_get_assignment',
-          'infomentor_get_assignments',
           'infomentor_get_assessment_item',
           'infomentor_get_assessments',
+          'infomentor_get_assignment',
+          'infomentor_get_assignments',
           'infomentor_get_calendar',
           'infomentor_get_calendar_entry',
           'infomentor_get_homework',
@@ -1095,8 +1095,11 @@ test('expired sessions renew once with private credentials, preserve account and
     assert.deepEqual(overviews[0].timetable, [siblingEntry]);
     expireMessage = true;
     const bodyBefore = passwordSubmissions;
+    await assert.rejects(client.getMessage({ id: 41 }), { code: 'LOGIN_REQUIRED' });
+    assert.equal(passwordSubmissions, bodyBefore, 'full message reads never attempt automatic login');
+    await client.getOverview();
+    assert.equal(passwordSubmissions, bodyBefore + 1, 'unchanged overview recovers exactly once');
     assert.equal((await client.getMessage({ id: 41 })).message.messageBodyPlainText, 'Bring lunch');
-    assert.equal(passwordSubmissions, bodyBefore + 1, 'mid-read expiry gets exactly one recovery');
     assert.ok(
       (await readStored(store)).session?.cookies.some(
         (cookie) => cookie.key === 'rotation' && cookie.value === 'kept',
