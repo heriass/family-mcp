@@ -1,6 +1,71 @@
 name: InfoMentor OAuth fix Linux release
 on:
   push:
+    branches: [fix-infomentor-oauth5]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux-x64:
+    if: github.repository == 'heriass/family-mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Format changed test fixtures
+        run: bunx oxfmt -c .oxfmtrc.json --write rust/infomentor-mcp/tests/ts/{integration.test.ts,loopback.test.ts,parity.ts}
+      - name: Install pinned Rust and musl
+        working-directory: rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          rustup toolchain install
+      - name: Check and test InfoMentor
+        working-directory: rust
+        run: |
+          cargo fmt --package infomentor-mcp
+          cargo fmt --check
+          cargo clippy -p infomentor-mcp --all-targets --all-features --locked -- -D warnings
+          FAMILY_MCP_BUN="$(command -v bun)" cargo test -p infomentor-mcp --all-features --locked --no-fail-fast
+      - name: Verify package pins and build upstream archive format
+        working-directory: packages/infomentor-mcp
+        run: |
+          bun run release:check
+          bun run build:binary
+          bun run test:binary
+          bun run test:installer
+          cd release
+          sha256sum -c infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256
+          tar -tzf infomentor-mcp-0.9.1-linux-x64.tar.gz
+          file native/infomentor-mcp
+      - name: Publish verified fork release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          Read-only assessment tools, based on the working infomentor-mcp@0.9.1-oauth-fix4 release (executable version 0.9.1).
+
+          Adds infomentor_get_assessments({childId?, academicYearId?}) for the selected child's subjects, assessment lists, recent results and new flags, and infomentor_get_assessment_item({childId?, kind, id}) for grid, task, uol, learning_step and self_assessment details. IDs can come from the overview or linked items. Child selection is verified and persists in the session; school records are never modified.
+
+          Only the advertised read actions under https://minn.infomentor.is/assessmentv2/assessmentv2/ are accepted; URLs containing credentials, queries or fragments are rejected. POST redirects to another assessment action are refused. Shapes are checked, secret/URL fields and HTML attributes are omitted from returned JSON, and unknown models are retained without guessing grade semantics. Output is bounded to 40,000 UTF-16 units with a truncated flag; oversized data is null and json holds a sanitized preview. School content remains untrusted source material. Error messages contain no upstream secrets.
+
+          Login, password handling, all existing tools, INFOMENTOR_DEBUG, and the fix4 Content-Length: 0 behavior are retained. Collection coverage is unchanged and does not include assessments. These new tools are in the Rust binary; the TypeScript server's original surface is retained for regression comparison.
+
+          Linux x64 static musl binary, packaged with the upstream build script and original archive layout, bundled notices, helpers, and SHA-256 sidecar. The executable reports version 0.9.1.
+
+          Verification: Rust formatting, Clippy, unit tests, loopback assessment tests (all five kinds, year navigation, child switching, safe URLs, no write action, malformed responses, redaction and size limits), original-tool integration/parity and login regressions, native MCP smoke test, installer checks, and archive checksum verification. Live assessment data was not tested; the implementation uses the supplied assessmentv2 contract and returns unfamiliar detail models as sanitized JSON.
+          EOF
+          gh release create 'infomentor-mcp@0.9.1-oauth-fix5' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — Assessment reads, OAuth fix5 (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
+name: InfoMentor OAuth fix Linux release
+on:
+  push:
     branches: [fix-infomentor-oauth4]
   workflow_dispatch:
 permissions:
