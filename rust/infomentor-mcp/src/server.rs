@@ -28,6 +28,15 @@ fn surface(allow_setup_tools: bool) -> Surface {
     let assessments = Surface::parse(include_str!("assessment-surface.json"));
     let at = surface.tools.iter().position(|tool| SETUP_TOOLS.contains(&tool.name.as_ref())).unwrap_or(surface.tools.len());
     surface.tools.splice(at..at, assessments.tools);
+    let school = Surface::parse(include_str!("school-surface.json"));
+    for tool in school.tools {
+        if let Some(at) = surface.tools.iter().position(|original| original.name == tool.name) {
+            surface.tools[at] = tool;
+        } else {
+            let at = surface.tools.iter().position(|tool| SETUP_TOOLS.contains(&tool.name.as_ref())).unwrap_or(surface.tools.len());
+            surface.tools.insert(at, tool);
+        }
+    }
 
     if !allow_setup_tools {
         surface
@@ -91,8 +100,8 @@ impl Server for InfoMentor {
                 client.messages(request, signal).await
             }
             "infomentor_get_message" => {
-                let id = input::message(arguments)?;
-                client.message(id, signal).await
+                let (id, child, max_chars) = input::message_context(arguments)?;
+                client.message(id, child, max_chars, signal).await
             }
             "infomentor_get_notifications" => {
                 let request = input::notifications(arguments)?;
@@ -110,6 +119,15 @@ impl Server for InfoMentor {
                 let request = input::assessment_item(arguments)?;
                 client.assessment_item(request, signal).await
             }
+            "infomentor_app_data" => client.school(crate::school::input("infomentor_app_data", arguments)?, signal).await,
+            "infomentor_app_get" => client.school(crate::school::input("infomentor_app_get", arguments)?, signal).await,
+            "infomentor_get_calendar" => client.school(crate::school::input("infomentor_get_calendar", arguments)?, signal).await,
+            "infomentor_get_calendar_entry" => client.school(crate::school::input("infomentor_get_calendar_entry", arguments)?, signal).await,
+            "infomentor_get_homework" => client.school(crate::school::input("infomentor_get_homework", arguments)?, signal).await,
+            "infomentor_get_homework_item" => client.school(crate::school::input("infomentor_get_homework_item", arguments)?, signal).await,
+            "infomentor_get_assignments" => client.school(crate::school::input("infomentor_get_assignments", arguments)?, signal).await,
+            "infomentor_get_assignment" => client.school(crate::school::input("infomentor_get_assignment", arguments)?, signal).await,
+            "infomentor_get_news" => client.school(crate::school::input("infomentor_get_news", arguments)?, signal).await,
             "infomentor_login" => {
                 let request = input::login(arguments)?;
                 client.start_login(request)
@@ -167,9 +185,18 @@ mod tests {
                 "infomentor_collect_updates",
                 "infomentor_get_assessments",
                 "infomentor_get_assessment_item",
+                "infomentor_app_data",
+                "infomentor_app_get",
+                "infomentor_get_calendar",
+                "infomentor_get_calendar_entry",
+                "infomentor_get_homework",
+                "infomentor_get_homework_item",
+                "infomentor_get_assignments",
+                "infomentor_get_assignment",
+                "infomentor_get_news",
             ]
         );
-        assert_eq!(names(true).len(), 13);
+        assert_eq!(names(true).len(), 22);
         assert!(names(true).ends_with(&SETUP_TOOLS.map(String::from)));
     }
 }
