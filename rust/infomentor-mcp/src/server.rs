@@ -25,6 +25,9 @@ const SETUP_TOOLS: [&str; 4] = [
 /// The TypeScript surface, without the setup tools unless they are allowed.
 fn surface(allow_setup_tools: bool) -> Surface {
     let mut surface = Surface::parse(include_str!("surface.json"));
+    let assessments = Surface::parse(include_str!("assessment-surface.json"));
+    let at = surface.tools.iter().position(|tool| SETUP_TOOLS.contains(&tool.name.as_ref())).unwrap_or(surface.tools.len());
+    surface.tools.splice(at..at, assessments.tools);
 
     if !allow_setup_tools {
         surface
@@ -99,6 +102,14 @@ impl Server for InfoMentor {
                 let request = input::collect(arguments)?;
                 client.collect(request, signal).await
             }
+            "infomentor_get_assessments" => {
+                let request = input::assessments(arguments)?;
+                client.assessments(request, signal).await
+            }
+            "infomentor_get_assessment_item" => {
+                let request = input::assessment_item(arguments)?;
+                client.assessment_item(request, signal).await
+            }
             "infomentor_login" => {
                 let request = input::login(arguments)?;
                 client.start_login(request)
@@ -154,9 +165,11 @@ mod tests {
                 "infomentor_get_message",
                 "infomentor_get_notifications",
                 "infomentor_collect_updates",
+                "infomentor_get_assessments",
+                "infomentor_get_assessment_item",
             ]
         );
-        assert_eq!(names(true).len(), 11);
+        assert_eq!(names(true).len(), 13);
         assert!(names(true).ends_with(&SETUP_TOOLS.map(String::from)));
     }
 }
