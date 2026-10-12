@@ -418,6 +418,106 @@ async function savedSession(value = 'synthetic') {
   return captureSession(jar);
 }
 
+test('assessment reads select children, navigate years, fetch all kinds and refuse writes or secret-bearing URLs', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'infomentor-assessment-'));
+  const file = join(directory, 'session.json');
+  await writeSession(await savedSession(), file);
+  let selected = 'first';
+  let mode = 'normal';
+  const seen: string[] = [];
+  const actions = ['getGridItems', 'getTaskItems', 'getUolItems', 'getLearningStepItems', 'getSelfAssessmentItems'];
+  const urls = Object.fromEntries([...actions, 'getNavigationData'].map(action => [action, `/assessmentv2/assessmentv2/${action}`]));
+  const overview = {
+    gridItemsList: [{ id: 41, subject: 'Íslenska', isNew: true, grade: 'A' }],
+    uolItemsList: [{ id: 'uol-1', linkedTasks: [{ id: 42 }] }],
+    selfAssessmentItemsList: [],
+    subjects: [{ name: 'Íslenska' }],
+    recentAssessments: [{ title: 'Lestur', teacherComment: 'Góð framför' }],
+    urls,
+  };
+  const served = await serveStdio({ sessionFile: file, fetch: (url, init) => {
+    seen.push(`${init.method} ${url.pathname}`);
+    if (url.pathname === '/') return new Response(`<script>IMHome.home.homeData = ${JSON.stringify({
+      account: { currentUser: { id: 'parent' }, pupils: ['first', 'second'].map((id, index) => ({ id, name: id, selected: id === selected, switchPupilUrl: `/Account/PupilSwitcher/SwitchPupil/${101 + index}` })) },
+      apps: [{ codeName: 'assessmentv2' }],
+    })}; IMHome.home.init(1);</script>`);
+    if (url.pathname === '/Account/PupilSwitcher/SwitchPupil/102') {
+      assert.equal(init.method, 'GET'); selected = 'second';
+      return new Response(null, { status: 302, headers: { Location: PARENT_URL } });
+    }
+    assert.equal(init.method, 'POST');
+    assert.equal(new Headers(init.headers).get('user-agent'), 'Bun/1.4.2');
+    assert.equal(new Headers(init.headers).get('accept'), 'application/json, text/html;q=0.9');
+    assert.match(new Headers(init.headers).get('cookie') ?? '', /IMHome=synthetic/);
+    if (url.pathname === '/assessmentv2/assessmentv2/appData') {
+      assert.equal(init.body ?? '', '');
+      const link = mode === 'evil' ? 'https://evil.test/private?oauth_token=private' : mode === 'write' ? '/assessmentv2/assessmentv2/save' : urls.getGridItems;
+      return Response.json({ ...overview, urls: { ...urls, getGridItems: link } });
+    }
+    if (url.pathname === '/assessmentv2/assessmentv2/getNavigationData') {
+      assert.equal(new URLSearchParams(String(init.body)).get('academicYearId'), '2025');
+      return Response.json({ ...overview, year: '2025', subjects: [{ name: 'Stærðfræði' }] });
+    }
+    assert.ok(actions.some(action => url.pathname === `/assessmentv2/assessmentv2/${action}/41`));
+    assert.equal(init.body ?? '', '');
+    assert.equal(new Headers(init.headers).get('content-length'), '0');
+    if (mode === 'redirect') return new Response(null, { status: 307, headers: { Location: '/assessmentv2/assessmentv2/save' } });
+    if (mode === 'error') return new Response('private-upstream-secret', { status: 500 });
+    if (mode === 'malformed') return Response.json(true);
+    if (mode === 'large') return Response.json({ newShape: 'é'.repeat(100_000), oauth_token: 'private' });
+    return Response.json({ id: 41, grade: 'A', criteria: [{ title: 'Reading', achieved: true }], teacherComment: '<p>Good progress</p>', linkedGrids: [{ id: 55 }], oauth_token: 'private', urls: { itemUrl: 'private' } });
+  } });
+  const client = new Client({ name: 'assessment-test', version: '1.0.0' });
+  await client.connect(served.transport);
+  const call = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+  try {
+    const tools = (await client.listTools()).tools;
+    const additions = tools.filter(tool => tool.name.includes('assessment'));
+    assert.equal(additions.length, 2);
+    assert.ok(additions.every(tool => tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint === false));
+    const result = await call('infomentor_get_assessments');
+    assert.ok(!result.isError);
+    assert.equal(result.structuredContent?.childId, 'first');
+    assert.equal(result.structuredContent?.schemaKnown, true);
+    assert.equal((result.structuredContent?.data as typeof overview).gridItemsList[0]?.isNew, true);
+    assert.equal((result.structuredContent?.data as typeof overview).gridItemsList[0]?.grade, 'A');
+    assert.ok(!JSON.stringify(result).includes('getGridItems'));
+    const year = await call('infomentor_get_assessments', { childId: 'second', academicYearId: 2025 });
+    assert.ok(!year.isError);
+    assert.equal(year.structuredContent?.childId, 'second');
+    assert.equal(year.structuredContent?.academicYearId, '2025');
+    assert.equal((year.structuredContent?.data as { year: string }).year, '2025');
+    for (const kind of ['grid', 'task', 'uol', 'learning_step', 'self_assessment']) {
+      const detail = await call('infomentor_get_assessment_item', { kind, id: 41 });
+      assert.ok(!detail.isError);
+      assert.equal(detail.structuredContent?.childId, 'second');
+      assert.equal((detail.structuredContent?.data as { teacherComment: string }).teacherComment, 'Good progress');
+      assert.ok(!JSON.stringify(detail).includes('private'));
+    }
+    for (const bad of ['evil', 'write', 'redirect', 'error', 'malformed']) {
+      mode = bad;
+      const detail = await call('infomentor_get_assessment_item', { kind: 'grid', id: 41 });
+      assert.equal(detail.isError, true, bad);
+      assert.ok(!JSON.stringify(detail).includes('private'), bad);
+    }
+    mode = 'large';
+    const large = await call('infomentor_get_assessment_item', { kind: 'grid', id: 41 });
+    assert.ok(!large.isError);
+    assert.equal(large.structuredContent?.truncated, true);
+    assert.equal(large.structuredContent?.schemaKnown, false);
+    assert.ok((large.structuredContent?.json as string).length <= 40_000);
+    assert.ok(!JSON.stringify(large).includes('private'));
+    assert.equal((await call('infomentor_get_assessment_item', { kind: 'grid', id: '../save' })).isError, true);
+    const before = seen.filter(path => path.includes('assessmentv2')).length;
+    assert.equal((await call('infomentor_get_assessments', { childId: 'unregistered' })).isError, true);
+    assert.equal(seen.filter(path => path.includes('assessmentv2')).length, before);
+    assert.ok(!seen.some(path => path.includes('/save') || path.includes('evil.test')));
+  } finally {
+    await client.close(); await served.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('private login and eleven MCP tools select children and read school data without changing read state', async () => {
   // The four setup tools are an opt-in; this test enables them to drive login and logout over MCP.
   const directory = await mkdtemp(join(tmpdir(), 'infomentor-http-'));
@@ -450,6 +550,8 @@ test('private login and eleven MCP tools select children and read school data wi
         (await readOnlyClient.listTools()).tools.map((tool) => tool.name).toSorted(),
         [
           'infomentor_collect_updates',
+          'infomentor_get_assessment_item',
+          'infomentor_get_assessments',
           'infomentor_get_message',
           'infomentor_get_messages',
           'infomentor_get_notifications',
@@ -499,7 +601,7 @@ test('private login and eleven MCP tools select children and read school data wi
     server = await serveStdio({ sessionFile: file, allowSetupTools: true, fetch: routes.fetch });
     await client.connect(server.transport);
     const tools = (await client.listTools()).tools;
-    assert.equal(tools.length, 11);
+    assert.equal(tools.length, 13);
     assert.ok(tools.every((tool) => tool.outputSchema));
     assert.ok(!tools.some((tool) => tool.name.includes('browser')));
     const loginTool = tools.find((tool) => tool.name === 'infomentor_login');
