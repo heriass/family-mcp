@@ -626,21 +626,21 @@ impl Client {
             let query = crate::describe::introspection_query();
             let result = client.query_response(session, "DescribeApi", &query, json!({}), false, true)?;
             let mut secrets = result.redactions;
-            if result.errors == 0 {
+            let schema = if result.errors == 0 {
                 let data = result.data.ok_or(Fail::Safe("Abler returned no schema discovery data."))?;
-                return crate::describe::schema(&Value::Object(data), &input, &secrets);
-            }
+                Some(crate::describe::schema(&Value::Object(data), &input, &secrets)?)
+            } else { None };
+            if schema.is_some() && !input.explicit_probes && input.describe_fields.is_empty() { return schema.ok_or(Fail::Unknown); }
             let errors = result.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>();
-            let typename = client.query_response(session, "DescribeApiMutationType", "mutation DescribeApiMutationType { __typename }", json!({}), false, true)?;
+            let root_query = crate::describe::document("DescribeApiRootType", input.root, "__typename", false);
+            let typename = client.query_response(session, "DescribeApiRootType", &root_query, json!({}), false, true)?;
             secrets.extend(typename.redactions);
-            let mutation_type = typename.data.as_ref().and_then(|data| data.get("__typename")).and_then(Value::as_str)
-                .filter(|name| crate::describe::name(name)).map(|name| crate::describe::safe_text(name, &secrets));
-            let mut probes = Vec::new();
-            probes.push(json!({"field": "__typename", "errors": typename.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>()}));
+            let root_type = crate::describe::validation_root(&typename.messages);
+            let mut probes = vec![json!({"field": "__typename", "errors": typename.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>(), "mode":"root_type"})];
             let mut suggestions = Vec::new();
-            for (index, field) in crate::describe::PROBES.iter().enumerate() {
+            for (index, field) in input.probes.iter().enumerate() {
                 let operation = format!("DescribeApiProbe{index}");
-                let query = crate::describe::probe_query(&operation, field);
+                let query = crate::describe::document(&operation, input.root, field, false);
                 let response = client.query_response(session, &operation, &query, json!({}), false, true)?;
                 secrets.extend(response.redactions);
                 for message in &response.messages {
@@ -648,8 +648,29 @@ impl Client {
                 }
                 probes.push(json!({"field": field, "errors": response.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>()}));
             }
+            let mut described = Vec::new();
+            for (index, field) in input.describe_fields.iter().enumerate() {
+                let mut stages = Vec::new(); let mut messages = Vec::new();
+                for empty_input in [false, true] {
+                    if empty_input && !crate::describe::reported_input(&messages) { break; }
+                    let operation = format!("DescribeApiField{index}{}", usize::from(empty_input));
+                    let query = crate::describe::document(&operation, input.root, field, empty_input);
+                    let response = client.query_response(session, &operation, &query, json!({}), false, true)?;
+                    secrets.extend(response.redactions);
+                    for message in &response.messages { suggestions.extend(crate::describe::suggestions(message)); }
+                    stages.push(json!({"mode":if empty_input {"empty_input"} else {"no_arguments"}, "errors":response.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>()}));
+                    messages.extend(response.messages);
+                }
+                described.push(crate::describe::described(field, input.root, stages, &messages, &secrets));
+            }
             // Re-sanitize earlier diagnostics after any cookie rotation during later probes.
-            crate::describe::fallback(errors, mutation_type, probes, suggestions, &input, &secrets)
+            let suggestions = suggestions.into_iter().filter(|name| name.to_lowercase().contains(&input.filter)).collect::<std::collections::BTreeSet<_>>();
+            let mut output = if let Some(schema) = schema { schema } else { crate::describe::fallback(errors, root_type.clone(), Vec::new(), Vec::new(), &input, &secrets)? };
+            output["root"] = json!(input.root.label()); output["rootType"] = json!(root_type);
+            output["probes"] = json!(probes); output["suggestions"] = json!(suggestions); output["describedFields"] = json!(described);
+            if matches!(input.root, crate::describe::Root::Query) && output["introspection"] == false { output["queryType"] = output["rootType"].clone(); output["mutationType"] = Value::Null; }
+            crate::describe::scrub(&mut output, &secrets);
+            Ok(crate::describe::limit(output, input.max_chars))
         })
     }
 
