@@ -287,7 +287,10 @@ impl Http {
                     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 )?;
                 set(ACCEPT_LANGUAGE, "is-IS,is;q=0.9,en;q=0.8")?;
-                set(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")?;
+                set(
+                    USER_AGENT,
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                )?;
             } else {
                 set(ACCEPT, "application/json, text/html;q=0.9")?;
                 set(USER_AGENT, AGENT)?;
