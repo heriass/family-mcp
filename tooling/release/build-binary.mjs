@@ -57,10 +57,12 @@ function buildRust(rust, crate) {
 
   // Linux archives are static musl executables, so they run on any distribution, as Bun's did.
   // macOS builds for the runner it is on.
-  const target =
+  const requestedTarget = process.env.FAMILY_MCP_RUST_TARGET;
+  assert.ok(!requestedTarget || (crate === 'infomentor-mcp' && process.platform === 'linux' && process.arch === 'x64' && requestedTarget === 'x86_64-unknown-linux-gnu'), 'Unsupported explicit Rust release target.');
+  const target = requestedTarget ?? (
     process.platform === 'linux'
       ? `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-unknown-linux-musl`
-      : /^host: (.+)$/m.exec(read('rustc', ['-vV']))?.[1];
+      : /^host: (.+)$/m.exec(read('rustc', ['-vV']))?.[1]);
 
   assert.ok(target, 'rustc did not name its host target.');
   execFileSync(
