@@ -283,6 +283,9 @@ enum Stop {
     Failed,
 }
 
+#[derive(Clone, Copy)]
+enum Mode { Api, Login, ReadForm, ReadJson }
+
 impl From<Fail> for Stop {
     fn from(fail: Fail) -> Self {
         Stop::Fail(fail)
@@ -342,6 +345,13 @@ impl Http {
         source: &str,
         browser_login: bool,
     ) -> Result<Page> {
+        self.request_payload(value, fields.map(form_body), signal, source, if browser_login { Mode::Login } else { Mode::Api })
+    }
+
+    fn request_payload(
+        &mut self, value: &str, body: Option<String>, signal: &Signal,
+        source: &str, mode: Mode,
+    ) -> Result<Page> {
         let now = js::now_ms();
 
         if now < self.cooldown_until {
@@ -354,10 +364,9 @@ impl Http {
         let deadline = Instant::now() + REQUEST_TIMEOUT;
         let request_signal = signal.any(&Signal::timeout(REQUEST_TIMEOUT));
         let url = trusted_url(value)?;
-        let body = fields.map(form_body);
         let previous = trusted_url(source)?;
 
-        match self.hops(url, body, previous, &request_signal, browser_login) {
+        match self.hops(url, body, previous, &request_signal, mode) {
             Ok(page) => Ok(page),
             Err(_) if signal.aborted() => Err(CANCELLED),
             Err(Stop::Fail(fail @ Fail::Im { .. })) => Err(fail),
@@ -378,12 +387,14 @@ impl Http {
         mut body: Option<String>,
         mut previous: Url,
         signal: &Signal,
-        browser_login: bool,
+        mode: Mode,
     ) -> std::result::Result<Page, Stop> {
         let debug = std::env::var("INFOMENTOR_DEBUG").is_ok_and(|value| value == "1");
-        // Assessment reads must never replay their POST against a different action.
-        // This guard applies only to the new assessment controller, not existing requests.
-        let assessment_path = url.path().to_ascii_lowercase().starts_with("/assessmentv2/assessmentv2/").then(|| url.path().to_owned());
+        let browser_login = matches!(mode, Mode::Login);
+        let json_body = matches!(mode, Mode::ReadJson);
+        // School reads must never follow redirects to a different action. The original API
+        // and login requests retain their existing redirect behavior.
+        let assessment_path = (matches!(mode, Mode::ReadForm | Mode::ReadJson) || url.path().to_ascii_lowercase().starts_with("/assessmentv2/assessmentv2/")).then(|| url.path().to_owned());
         for _ in 0..10 {
             signal.check()?;
             let mut headers = HeaderMap::new();
@@ -413,7 +424,7 @@ impl Http {
             }
 
             if body.is_some() {
-                set(CONTENT_TYPE, "application/x-www-form-urlencoded")?;
+                set(CONTENT_TYPE, if json_body { "application/json" } else { "application/x-www-form-urlencoded" })?;
                 set(ORIGIN, &origin(&previous))?;
             }
             // IIS requires an explicit length even when the POST form has no fields.
@@ -459,10 +470,11 @@ impl Http {
                     )
                     .into());
                 }
-                if body.is_some() && assessment_path.as_ref().is_some_and(|path| {
-                    next.path() != path || next.query().is_some() || next.fragment().is_some()
+                if assessment_path.as_ref().is_some_and(|path| {
+                    if body.is_none() && login_path(next.path(), true) { return false; }
+                    !next.path().eq_ignore_ascii_case(path) || next.query().is_some() || next.fragment().is_some()
                 }) {
-                    return Err(Fail::new(Code::UnexpectedPage, "InfoMentor requested an unsupported assessment read redirect.").into());
+                    return Err(Fail::new(Code::UnexpectedPage, "InfoMentor requested an unsupported school read redirect.").into());
                 }
                 previous = std::mem::replace(&mut url, next);
                 continue;
@@ -610,6 +622,25 @@ impl Http {
                 Code::UnexpectedPage,
                 "InfoMentor school data is unavailable or its format has changed.",
             ))
+    }
+
+    /// JSON posts to validated school read endpoints only. Caller validates the advertised key
+    /// and destination; every POST redirect is constrained to this same path.
+    pub fn read_json_data(&mut self, path: &str, body: &Value, signal: &Signal) -> Result<Value> {
+        let encoded = if body.is_null() { String::new() } else { body.to_string() };
+        let page = self.request_payload(&format!("{PARENT_URL}{path}"), Some(encoded), signal, PARENT_URL, Mode::ReadJson)?;
+        require_school_page(&page)?;
+        js::parse(&page.text).filter(|value| value.is_object() || value.is_array())
+            .ok_or(Fail::new(Code::UnexpectedPage, "InfoMentor school data is unavailable or its format has changed."))
+    }
+
+    /// The legacy form encoding with the new reads' no-action-changing-redirect guard.
+    pub fn read_form_data(&mut self, path: &str, fields: &[(&str, String)], signal: &Signal) -> Result<Value> {
+        let fields = fields.iter().map(|(key, value)| ((*key).to_owned(), value.clone())).collect::<Vec<_>>();
+        let page = self.request_payload(&format!("{PARENT_URL}{path}"), Some(form_body(&fields)), signal, PARENT_URL, Mode::ReadForm)?;
+        require_school_page(&page)?;
+        js::parse(&page.text).filter(|value| value.is_object() || value.is_array())
+            .ok_or(Fail::new(Code::UnexpectedPage, "InfoMentor school data is unavailable or its format has changed."))
     }
 
     /// `readParent(signal, childId)`: the parent page, after selecting `child_id` when given.
