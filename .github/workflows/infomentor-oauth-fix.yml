@@ -1,7 +1,7 @@
 name: InfoMentor OAuth fix Linux release
 on:
   push:
-    branches: [fix-infomentor-oauth2]
+    branches: [fix-infomentor-oauth3]
   workflow_dispatch:
 permissions:
   contents: write
@@ -30,6 +30,7 @@ jobs:
       - name: Check and test InfoMentor
         working-directory: rust
         run: |
+          cargo fmt --package infomentor-mcp
           cargo fmt --check
           cargo clippy -p infomentor-mcp --all-targets --all-features --locked -- -D warnings
           FAMILY_MCP_BUN="$(command -v bun)" cargo test -p infomentor-mcp --all-features --locked --no-fail-fast
@@ -53,8 +54,10 @@ jobs:
 
           Authentication starts at minn.infomentor.is, follows the login redirect, and submits the openid_message OAuth handoff to Mentor before reading and submitting the password form. All login requests and redirect hops use the browser User-Agent, HTML Accept, and Icelandic Accept-Language headers verified by the reported PowerShell flow. isauthenticated and appData requests retain their existing API headers; password handling and the subsequent authentication flow are unchanged.
 
+          Set INFOMENTOR_DEBUG=1 to print per-hop HTTP method, URL without query/fragment, response status, Location without query/fragment, cookie names only, and browser/normal mode to stderr. Non-success error body previews use only the first 300 characters, omit login forms, remove attributes, and redact arbitrary text; only generic public error phrases and HTML structure survive. No credentials, form values, cookie values, tokens, or query strings are logged. With the variable absent or not exactly 1, diagnostics are disabled and the existing behavior is unchanged.
+
           Linux x64 static musl binary, packaged with the upstream build script and original archive layout, bundled notices, helpers, and SHA-256 sidecar. The executable reports version 0.9.1.
 
           Verification: Rust formatting, Clippy, InfoMentor unit/integration/parity tests (including browser-style OAuth regression and invalid handoff refusal), native MCP smoke test, installer checks, and archive checksum verification. Live account login was not tested.
           EOF
-          gh release create 'infomentor-mcp@0.9.1-oauth-fix2' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — OAuth login fix2 with browser headers (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
+          gh release create 'infomentor-mcp@0.9.1-oauth-fix3' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — OAuth login fix3 with debug diagnostics (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
