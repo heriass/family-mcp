@@ -267,13 +267,13 @@ pub fn legacy_result(value: &Value, max_chars: usize) -> Value {
 
 pub fn full_message(http: &mut Http, signal: &Signal, id: i64) -> Result<Value> {
     let value = http.read_form_data("Message/message/GetMessage", &[("id", id.to_string())], signal)?;
-    let message = crate::shapes::message_detail(&value).ok_or_else(changed)?;
+    let message = crate::shapes::message_detail(&value).ok_or(Fail::new(Code::UnexpectedPage, "InfoMentor school data is unavailable or its format has changed."))?;
     Ok(json!({"message": message, "fullContent": value}))
 }
 
 pub fn messages_page(http: &mut Http, signal: &Signal, folder: &str, page: i64, page_size: i64, search: &str) -> Result<crate::shapes::MessagesPage> {
     let value = http.read_form_data("Message/message/GetMessages", &[("page", page.to_string()), ("pageSize", page_size.to_string()), ("messageText", search.to_owned()), ("inbox", (folder == "inbox").to_string()), ("sentItems", (folder == "sent").to_string())], signal)?;
-    crate::shapes::messages_response(&value).ok_or_else(changed)
+    crate::shapes::messages_response(&value).ok_or(Fail::new(Code::UnexpectedPage, "InfoMentor school data is unavailable or its format has changed."))
 }
 
 pub fn full_notifications(http: &mut Http, signal: &Signal) -> Result<Value> {
@@ -390,7 +390,6 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
         Err(fail) if app_name == "calendarv2" && enabled(&parent, "calendar") && fail.is(Code::UnexpectedPage) => {
             let mut fallback = request.clone(); fallback.app = Some("calendar".to_owned()); return read(http, signal, &fallback);
         },
-        Err(fail) if fail.is(Code::UnexpectedPage) => return Ok(not_available(app_name, &child.id)),
         outcome => outcome?,
     };
     let mut body = request.body.clone();
