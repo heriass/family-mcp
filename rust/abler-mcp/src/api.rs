@@ -260,6 +260,8 @@ struct Graphql {
     data: Option<Map<String, Value>>,
     errors: usize,
     unauthenticated: bool,
+    messages: Vec<String>,
+    redactions: Vec<String>,
 }
 
 fn graphql(value: &Value) -> Option<Graphql> {
@@ -275,10 +277,12 @@ fn graphql(value: &Value) -> Option<Graphql> {
         Some(_) => return None,
     };
     let mut codes = Vec::new();
+    let mut messages = Vec::new();
     let errors = match object.get("errors") {
         None | Some(Value::Null) => 0,
         Some(Value::Array(errors)) => {
             for error in errors {
+                if let Some(message) = error.get("message").and_then(Value::as_str) { messages.push(message.to_owned()); }
                 match error {
                     Value::Null => {}
                     Value::Object(error) => match error.get("extensions") {
@@ -302,6 +306,8 @@ fn graphql(value: &Value) -> Option<Graphql> {
         data,
         errors,
         unauthenticated,
+        messages,
+        redactions: Vec::new(),
     })
 }
 
@@ -559,6 +565,20 @@ impl Client {
         variables: Value,
         force_refresh: bool,
     ) -> Result<Map<String, Value>> {
+        let result = self.query_response(session, operation, query, variables, force_refresh, false)?;
+        if result.errors > 0 {
+            return Err(Fail::Safe("Abler rejected the request. The session may lack permission, or the API may have changed."));
+        }
+        result.data.ok_or(Fail::Safe("Abler returned no data."))
+    }
+
+    /// The same transport and one-refresh rule, retaining GraphQL validation errors only for
+    /// discovery. Normal tools still use query() and its original reviewed failure boundary.
+    fn query_response(
+        &self, session: &mut Session, operation: &str, query: &str,
+        variables: Value, force_refresh: bool, discovery: bool,
+    ) -> Result<Graphql> {
+        let mut redactions = crate::describe::cookie_values(&session.jar.serialize());
         let access = session
             .jar
             .get("/graphql")
@@ -567,33 +587,70 @@ impl Client {
 
         if force_refresh || access.is_none_or(|access| access.ttl(js::now_ms()) < 60_000.0) {
             self.refresh(session)?;
+            redactions.extend(crate::describe::cookie_values(&session.jar.serialize()));
         }
         let body = json!({ "operationName": operation, "query": query, "variables": variables });
         let mut response = self.post(session, "/graphql", Some(&body))?;
+        redactions.extend(crate::describe::cookie_values(&session.jar.serialize()));
         let mut status = response.status();
         let mut result = graphql(&self.read_json(response));
 
         if status.as_u16() == 401 || result.as_ref().is_some_and(|result| result.unauthenticated) {
             self.refresh(session)?;
+            redactions.extend(crate::describe::cookie_values(&session.jar.serialize()));
             response = self.post(session, "/graphql", Some(&body))?;
+            redactions.extend(crate::describe::cookie_values(&session.jar.serialize()));
             status = response.status();
             result = graphql(&self.read_json(response));
         }
 
-        if !status.is_success() {
+        if !status.is_success() && !(discovery && [400, 403].contains(&status.as_u16()) && result.as_ref().is_some_and(|result| result.errors > 0 && !result.unauthenticated)) {
             return Err(Fail::Safe(
                 "Abler returned an error for the requested operation.",
             ));
         }
-        let result = result.ok_or(Fail::Safe("Abler returned an invalid API response."))?;
+        let mut result = result.ok_or(Fail::Safe("Abler returned an invalid API response."))?;
 
-        if result.errors > 0 {
+        if result.unauthenticated {
             // Server messages may contain private values. Never echo raw response bodies.
             return Err(Fail::Safe(
                 "Abler rejected the request. The session may lack permission, or the API may have changed.",
             ));
         }
-        result.data.ok_or(Fail::Safe("Abler returned no data."))
+        result.redactions = redactions;
+        Ok(result)
+    }
+
+    pub fn describe_api(&self, input: crate::describe::Request) -> Result<Value> {
+        self.session(|client, session| {
+            let query = crate::describe::introspection_query();
+            let result = client.query_response(session, "DescribeApi", &query, json!({}), false, true)?;
+            let mut secrets = result.redactions;
+            if result.errors == 0 {
+                let data = result.data.ok_or(Fail::Safe("Abler returned no schema discovery data."))?;
+                return crate::describe::schema(&Value::Object(data), &input, &secrets);
+            }
+            let errors = result.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>();
+            let typename = client.query_response(session, "DescribeApiMutationType", "mutation DescribeApiMutationType { __typename }", json!({}), false, true)?;
+            secrets.extend(typename.redactions);
+            let mutation_type = typename.data.as_ref().and_then(|data| data.get("__typename")).and_then(Value::as_str)
+                .filter(|name| crate::describe::name(name)).map(|name| crate::describe::safe_text(name, &secrets));
+            let mut probes = Vec::new();
+            probes.push(json!({"field": "__typename", "errors": typename.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>()}));
+            let mut suggestions = Vec::new();
+            for (index, field) in crate::describe::PROBES.iter().enumerate() {
+                let operation = format!("DescribeApiProbe{index}");
+                let query = crate::describe::probe_query(&operation, field);
+                let response = client.query_response(session, &operation, &query, json!({}), false, true)?;
+                secrets.extend(response.redactions);
+                for message in &response.messages {
+                    suggestions.extend(crate::describe::suggestions(message).into_iter().map(|name| crate::describe::safe_text(&name, &secrets)));
+                }
+                probes.push(json!({"field": field, "errors": response.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>()}));
+            }
+            // Re-sanitize earlier diagnostics after any cookie rotation during later probes.
+            crate::describe::fallback(errors, mutation_type, probes, suggestions, &input, &secrets)
+        })
     }
 
     /// Use an authenticated read so 'authenticated' never means only 'file exists'.
