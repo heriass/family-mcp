@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use mcp_runtime::BodyError;
 use reqwest::header::{
-    ACCEPT, ACCEPT_LANGUAGE, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue, LOCATION,
+    ACCEPT, ACCEPT_LANGUAGE, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue, LOCATION,
     ORIGIN, REFERER, RETRY_AFTER, SET_COOKIE, USER_AGENT,
 };
 use serde_json::Value;
@@ -181,6 +181,12 @@ fn cookie_names(header: &str) -> Vec<String> {
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+fn set_empty_post_length(headers: &mut HeaderMap, body: Option<&str>) {
+    if body == Some("") {
+        headers.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
+    }
 }
 
 fn debug_step(url: &Url, post: bool, browser: bool, cookies: &str, status: u16, headers: &HeaderMap) {
@@ -407,6 +413,8 @@ impl Http {
                 set(CONTENT_TYPE, "application/x-www-form-urlencoded")?;
                 set(ORIGIN, &origin(&previous))?;
             }
+            // IIS requires an explicit length even when the POST form has no fields.
+            set_empty_post_length(&mut headers, body.as_deref());
             let response = self
                 .net
                 .send(signal, &url, headers, body.clone())
@@ -674,6 +682,20 @@ impl Http {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_posts_have_an_explicit_zero_content_length() {
+        let mut headers = HeaderMap::new();
+        set_empty_post_length(&mut headers, Some(""));
+        assert_eq!(headers.get(CONTENT_LENGTH).unwrap(), "0");
+        assert!(!headers.contains_key(reqwest::header::TRANSFER_ENCODING));
+
+        for body in [None, Some("field=value")] {
+            let mut headers = HeaderMap::new();
+            set_empty_post_length(&mut headers, body);
+            assert!(!headers.contains_key(CONTENT_LENGTH));
+        }
+    }
 
     #[test]
     fn debug_metadata_omits_query_fragments_and_cookie_values() {
