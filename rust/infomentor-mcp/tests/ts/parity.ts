@@ -1218,7 +1218,9 @@ async function runServe(
   await client.connect(transport);
 
   if (step.surface) {
-    const { tools } = await client.listTools();
+    const listed = await client.listTools();
+    // Assessment tools are Rust-only additions. Compare every original tool unchanged.
+    const tools = listed.tools.filter(({ name }) => !['infomentor_get_assessments', 'infomentor_get_assessment_item'].includes(name));
     surfaces.push(tools.length);
     results.push({
       server: client.getServerVersion(),
