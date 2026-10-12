@@ -66,3 +66,8 @@ fn the_startup_cases_pass_against_this_binary() {
         if cfg!(target_os = "macos") { 2 } else { 1 },
     );
 }
+
+#[test]
+fn the_schema_discovery_cases_pass_against_this_binary() {
+    bun_test("describe.test.ts", 2);
+}
