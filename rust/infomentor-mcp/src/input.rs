@@ -41,6 +41,45 @@ pub struct LoginRequest {
     pub timeout_seconds: i64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentsRequest {
+    pub child_id: Option<String>,
+    pub academic_year_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssessmentItemRequest {
+    pub child_id: Option<String>,
+    pub kind: &'static str,
+    pub id: String,
+}
+
+fn assessment_id(parse: &mut Parse, value: Option<&Value>) -> Option<String> {
+    let id = match value {
+        Some(Value::Number(n)) if n.as_u64().is_some_and(|n| n <= SAFE as u64) => Some(n.to_string()),
+        _ => parse.string(value, (1, 128)),
+    };
+    if id.as_deref().is_some_and(|id| !crate::assessment::valid_id(id)) {
+        parse.issue("Use an assessment ID from the returned lists or linked items.".to_owned(), true);
+    }
+    id
+}
+
+pub fn assessments(arguments: &Map<String, Value>) -> Result<AssessmentsRequest, String> {
+    object(arguments, &["childId", "academicYearId"], |parse, args| AssessmentsRequest {
+        child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))),
+        academic_year_id: optional(parse, args, "academicYearId", assessment_id),
+    }, |_| None)
+}
+
+pub fn assessment_item(arguments: &Map<String, Value>) -> Result<AssessmentItemRequest, String> {
+    object(arguments, &["childId", "kind", "id"], |parse, args| AssessmentItemRequest {
+        child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))),
+        kind: parse.at("kind").option(args.get("kind"), &crate::assessment::KINDS).unwrap_or("grid"),
+        id: assessment_id(&mut parse.at("id"), args.get("id")).unwrap_or_default(),
+    }, |_| None)
+}
+
 /// The lower bound of a number: `.min(n)` or `.positive()`.
 #[derive(Clone, Copy)]
 enum Min {
