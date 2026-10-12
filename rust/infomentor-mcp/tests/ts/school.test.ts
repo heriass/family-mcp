@@ -57,7 +57,7 @@ test('full school readers discover only read actions and return complete text, l
       if(action === 'getattachments') return Response.json({attachments:[{name:'Notes.pdf',type:'application/pdf',size:99,downloadUrl:'/docs/42?token=private'}]});
       if(id === 'objective-1') return Response.json({id,description:'Full learning objective'});
       if(id === '42') return Response.json({id:42,description:'Linked assessment full text',linkedGrids:[{id:43}]});
-      return Response.json({id:41,...detail,linkedUols:[{id:'objective-1'}],linkedTasks:app==='assessmentv2'?[{id:42}]:[]});
+      return Response.json({id:41,...detail,description:mode==='large'?detail.description+'x'.repeat(3000):detail.description,linkedUols:[{id:'objective-1'}],linkedTasks:app==='assessmentv2'?[{id:42}]:[]});
     }
     const filters = JSON.parse(String(init.body ?? '{}'));
     if(app === 'calendarv2' || app === 'calendar') {
@@ -110,9 +110,11 @@ test('full school readers discover only read actions and return complete text, l
     assert.ok(!messages.isError);assert.match(JSON.stringify(messages.structuredContent?.fullContent),/Full message including all paragraphs/);
     const message=await call('infomentor_get_message',{id:41});
     assert.ok(!message.isError);assert.match(JSON.stringify(message),/Sheet.pdf/);
+    mode='large';
     const capped=await call('infomentor_get_calendar',{from_date:'2026-10-01',to_date:'2026-10-31',max_chars:1000});
     assert.ok(!capped.isError);assert.equal(capped.structuredContent?.truncated,true);
     assert.ok((capped.structuredContent?.json as string).length<=1000);assert.ok(capped.structuredContent?.next);
+    mode='normal';
     const notifications=await call('infomentor_get_notifications');
     assert.ok(!notifications.isError);assert.match(JSON.stringify(notifications.structuredContent?.fullContent),/Full announcement/);
     const truncated=await call('infomentor_app_data',{app:'task',max_chars:1000});
