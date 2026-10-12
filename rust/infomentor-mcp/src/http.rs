@@ -165,6 +165,103 @@ fn latin1(value: &HeaderValue) -> String {
         .collect()
 }
 
+fn debug_url(url: &Url) -> String {
+    let mut url = url.clone();
+    url.set_query(None);
+    url.set_fragment(None);
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.into()
+}
+
+fn cookie_names(header: &str) -> Vec<String> {
+    header
+        .split(';')
+        .filter_map(|cookie| cookie.split_once('=').map(|(name, _)| name.trim()))
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn debug_step(url: &Url, post: bool, browser: bool, cookies: &str, status: u16, headers: &HeaderMap) {
+    let location = headers
+        .get(LOCATION)
+        .and_then(|value| url.join(&latin1(value)).ok())
+        .map(|url| debug_url(&url));
+    let set_cookies: Vec<String> = headers
+        .get_all(SET_COOKIE)
+        .iter()
+        .filter_map(|value| cookie_names(latin1(value).split(';').next().unwrap_or("")).into_iter().next())
+        .collect();
+    eprintln!(
+        "[infomentor-debug] {} {:?} status={} location={:?} sent_cookies={:?} set_cookies={:?} mode={}",
+        if post { "POST" } else { "GET" },
+        debug_url(url),
+        status,
+        location,
+        cookie_names(cookies),
+        set_cookies,
+        if browser { "browser" } else { "normal" },
+    );
+}
+
+/// Never log arbitrary upstream text: even an error page can echo credentials or tokens.
+/// Retain only public generic error phrases and HTML structure from the first 300 characters.
+fn debug_preview(url: &Url, text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    if login_path(url.path(), true)
+        || ["<form", "<input", "openid_message", "oauth_token", "__viewstate", "__eventvalidation"]
+            .iter()
+            .any(|marker| lower.contains(marker))
+    {
+        return None;
+    }
+    let prefix: String = text.chars().take(300).collect();
+    let mut rest = prefix.as_str();
+    let mut preview = String::new();
+    while !rest.is_empty() {
+        if rest.starts_with('<') {
+            let Some(end) = rest.find('>') else {
+                preview.push_str("[redacted]");
+                break;
+            };
+            let tag = rest[1..end].trim();
+            let closing = tag.starts_with('/');
+            let name = tag.trim_start_matches('/').split_ascii_whitespace().next().unwrap_or("");
+            let name = name.trim_end_matches('/').to_ascii_lowercase();
+            if ["html", "head", "title", "body", "h1", "h2", "p", "div", "span", "br", "hr", "pre"]
+                .contains(&name.as_str())
+            {
+                preview.push('<');
+                if closing { preview.push('/'); }
+                preview.push_str(&name);
+                preview.push('>');
+            } else {
+                preview.push_str("[redacted]");
+            }
+            rest = &rest[end + 1..];
+        } else {
+            let end = rest.find('<').unwrap_or(rest.len());
+            let content = rest[..end].trim();
+            if !content.is_empty() {
+                match content {
+                    "Internal Server Error" | "Service Unavailable" | "Bad Request" | "Forbidden"
+                    | "Access Denied" | "Not Found" | "Too Many Requests" | "The service is unavailable." => preview.push_str(content),
+                    _ => preview.push_str("[redacted]"),
+                }
+            }
+            rest = &rest[end..];
+        }
+    }
+    Some(preview.chars().take(300).collect())
+}
+
+fn debug_error_body(url: &Url, text: &str) {
+    if let Some(preview) = debug_preview(url, text) {
+        eprintln!("[infomentor-debug] error_body={preview:?}");
+    }
+}
+
 /// A header value as fetch's `Headers` takes it; `None` where it throws.
 fn header(text: &str) -> Option<HeaderValue> {
     let bytes: Option<Vec<u8>> = text.chars().map(|c| u8::try_from(c).ok()).collect();
@@ -274,6 +371,7 @@ impl Http {
         signal: &Signal,
         browser_login: bool,
     ) -> std::result::Result<Page, Stop> {
+        let debug = std::env::var("INFOMENTOR_DEBUG").is_ok_and(|value| value == "1");
         for _ in 0..10 {
             signal.check()?;
             let mut headers = HeaderMap::new();
@@ -318,6 +416,10 @@ impl Http {
 
             let status = response.status;
 
+            if debug {
+                debug_step(&url, body.is_some(), browser_login, &cookies, status, &response.headers);
+            }
+
             if [301, 302, 303, 307, 308].contains(&status) {
                 let location = response.headers.get(LOCATION).map(latin1);
                 // The body is never read; dropping the response cancels it.
@@ -349,7 +451,13 @@ impl Http {
 
             if status == 429 {
                 let retry = response.headers.get(RETRY_AFTER).map(latin1);
-                drop(response);
+                if debug {
+                    if let Some(Ok(bytes)) = self.net.read(signal, response, MAX_BODY_BYTES) {
+                        debug_error_body(&url, &String::from_utf8_lossy(&bytes));
+                    }
+                } else {
+                    drop(response);
+                }
                 let now = js::now_ms();
                 let milliseconds = match retry.as_deref() {
                     Some(retry)
@@ -386,6 +494,10 @@ impl Http {
                 Some(Err(BodyError::Failed)) | None => return Err(Stop::Failed),
             };
             let text = String::from_utf8_lossy(&bytes).into_owned();
+
+            if debug && !(200..=299).contains(&status) {
+                debug_error_body(&url, &text);
+            }
 
             if is_challenge(&text) {
                 return Err(Fail::new(
@@ -559,6 +671,29 @@ impl Http {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_metadata_omits_query_fragments_and_cookie_values() {
+        let url = Url::parse("https://user:password@minn.infomentor.is/path?oauth_token=secret#secret").unwrap();
+        assert_eq!(debug_url(&url), "https://minn.infomentor.is/path");
+        assert_eq!(cookie_names("IMHome=secret; transaction=another"), ["IMHome", "transaction"]);
+    }
+
+    #[test]
+    fn debug_error_previews_are_bounded_and_never_include_dynamic_text_or_attributes() {
+        let url = Url::parse("https://im1.infomentor.is/Production/Mentor/Villa.aspx").unwrap();
+        let text = "<html><body data-token='secret-token'><h1>Service Unavailable</h1><p>username=secret-user password=secret-password Cookie=secret-cookie https://example.test/?token=secret-query</p></body></html>";
+        let preview = debug_preview(&url, text).unwrap();
+        assert!(preview.contains("Service Unavailable"));
+        assert!(!preview.contains("secret"));
+        assert!(!preview.contains("data-token"));
+        assert!(!preview.contains('?'));
+        assert!(debug_preview(&url, &"é".repeat(1000)).unwrap().chars().count() <= 300);
+        assert_eq!(debug_preview(&url, "<form><input value='secret'></form>"), None);
+        assert_eq!(debug_preview(&url, "openid_message oauth_token=secret"), None);
+        let login = Url::parse("https://minn.infomentor.is/Authentication/Authentication/Login").unwrap();
+        assert_eq!(debug_preview(&login, "Service Unavailable"), None);
+    }
 
     #[test]
     fn challenge_and_login_pages_are_recognized() {
