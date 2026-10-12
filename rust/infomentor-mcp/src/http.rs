@@ -186,8 +186,11 @@ fn cookie_names(header: &str) -> Vec<String> {
 fn debug_step(url: &Url, post: bool, browser: bool, cookies: &str, status: u16, headers: &HeaderMap) {
     let location = headers
         .get(LOCATION)
-        .and_then(|value| url.join(&latin1(value)).ok())
-        .map(|url| debug_url(&url));
+        .map(|value| {
+            url.join(&latin1(value))
+                .map(|url| debug_url(&url))
+                .unwrap_or_else(|_| "[invalid Location]".to_owned())
+        });
     let set_cookies: Vec<String> = headers
         .get_all(SET_COOKIE)
         .iter()
