@@ -1153,6 +1153,7 @@ test('MCP executable exposes only read tools and reports missing auth without pr
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).toSorted()).toEqual([
       'auth_status',
+      'describe_api',
       'get_event',
       'get_profile',
       'list_child_schedules',
