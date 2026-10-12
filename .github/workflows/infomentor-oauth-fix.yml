@@ -1,7 +1,7 @@
 name: InfoMentor OAuth fix Linux release
 on:
   push:
-    branches: [fix-infomentor-oauth3]
+    branches: [fix-infomentor-oauth4]
   workflow_dispatch:
 permissions:
   contents: write
@@ -56,8 +56,10 @@ jobs:
 
           Set INFOMENTOR_DEBUG=1 to print per-hop HTTP method, URL without query/fragment, response status, Location without query/fragment, cookie names only, and browser/normal mode to stderr. Non-success error body previews use only the first 300 characters, omit login forms, remove attributes, and redact arbitrary text; only generic public error phrases and HTML structure survive. No credentials, form values, cookie values, tokens, or query strings are logged. With the variable absent or not exactly 1, diagnostics are disabled and the existing behavior is unchanged.
 
+          Every empty POST body now explicitly sends Content-Length: 0, including isauthenticated and empty forms on any endpoint or redirect hop. Nonempty POSTs and GETs, password handling, and INFOMENTOR_DEBUG diagnostics remain unchanged. Unit and loopback tests check the header and absence of chunked encoding.
+
           Linux x64 static musl binary, packaged with the upstream build script and original archive layout, bundled notices, helpers, and SHA-256 sidecar. The executable reports version 0.9.1.
 
           Verification: Rust formatting, Clippy, InfoMentor unit/integration/parity tests (including browser-style OAuth regression and invalid handoff refusal), native MCP smoke test, installer checks, and archive checksum verification. Live account login was not tested.
           EOF
-          gh release create 'infomentor-mcp@0.9.1-oauth-fix3' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — OAuth login fix3 with debug diagnostics (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
+          gh release create 'infomentor-mcp@0.9.1-oauth-fix4' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — OAuth login fix4 with empty POST length (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
