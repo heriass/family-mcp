@@ -81,6 +81,10 @@ impl Server for Abler {
                 let messages = input::messages(arguments)?;
                 client.run(|client| client.messages(messages)).await
             }
+            "describe_api" => {
+                let request = crate::describe::input(arguments)?;
+                client.run(|client| client.describe_api(request)).await
+            }
             _ => unreachable!("only listed tools are called"),
         })
     }
@@ -118,6 +122,8 @@ mod tests {
             error["content"][0]["text"],
             "The operation failed. Check the server logs for details."
         );
-        assert_eq!(surface().tools.len(), 8);
+        assert_eq!(surface().tools.len(), 9);
+        let describe = surface().tools.iter().find(|tool| tool.name == "describe_api").unwrap();
+        assert_eq!(serde_json::to_value(describe).unwrap()["annotations"]["readOnlyHint"], true);
     }
 }
