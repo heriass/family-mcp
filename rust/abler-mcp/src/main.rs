@@ -3,6 +3,7 @@
 mod api;
 mod auth;
 mod capture;
+mod describe;
 mod error;
 mod input;
 mod jar;
