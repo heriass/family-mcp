@@ -11,6 +11,7 @@ mod jar;
 mod js;
 mod login;
 mod server;
+mod school;
 mod session;
 mod shapes;
 mod signal;
