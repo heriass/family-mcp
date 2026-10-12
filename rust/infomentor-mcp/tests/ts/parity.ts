@@ -256,7 +256,7 @@ async function handle(request: Request): Promise<Response> {
       return new Response(relayHtml(state));
     }
 
-    return new Response('<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input name="oauth_token" value="bootstrap&amp;token"></form>');
+    return new Response('<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input type="hidden" name="oauth_token" value="bootstrap&amp;token"></form>');
   }
 
   if (path === '/Authentication/Authentication/LoginCallback')

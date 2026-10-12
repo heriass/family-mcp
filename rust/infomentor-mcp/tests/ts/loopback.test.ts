@@ -40,7 +40,7 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
 
     if (url.pathname === '/Authentication/Authentication/Login') {
       assert.match(new Headers(init.headers).get('cookie') ?? '', /transaction=ok/);
-      return new Response('<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input name="oauth_token" value="bootstrap&amp;token"></form>');
+      return new Response('<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input type="hidden" name="oauth_token" value="bootstrap&amp;token"></form>');
     }
 
     if (url.pathname === '/Production/Mentor/' && method === 'POST') {
@@ -149,11 +149,11 @@ test('invalid initial handoffs stop before any credentials are submitted', async
   await writeFile(credentialsFile, JSON.stringify({ username: 'synthetic-user', password: 'synthetic-password' }), { mode: 0o600 });
   try {
     for (const handoff of [
-      '<form method="post"><input name="oauth_token" value="token"></form>',
-      '<form id="openid_message" method="get" action="https://im1.infomentor.is/Production/Mentor/"><input name="oauth_token" value="token"></form>',
-      '<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input name="other" value="token"></form>',
-      '<form id="openid_message" method="post" action="https://minn.infomentor.is/Production/Mentor/"><input name="oauth_token" value="token"></form>',
-      '<form id="openid_message" method="post" action="https://im1.infomentor.is/wrong/"><input name="oauth_token" value="token"></form>',
+      '<form method="post"><input type="hidden" name="oauth_token" value="token"></form>',
+      '<form id="openid_message" method="get" action="https://im1.infomentor.is/Production/Mentor/"><input type="hidden" name="oauth_token" value="token"></form>',
+      '<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input type="hidden" name="other" value="token"></form>',
+      '<form id="openid_message" method="post" action="https://minn.infomentor.is/Production/Mentor/"><input type="hidden" name="oauth_token" value="token"></form>',
+      '<form id="openid_message" method="post" action="https://im1.infomentor.is/wrong/"><input type="hidden" name="oauth_token" value="token"></form>',
     ]) {
       const requests: string[] = [];
       await assert.rejects(login({ sessionFile: join(directory, 'session.json'), credentialsFile,

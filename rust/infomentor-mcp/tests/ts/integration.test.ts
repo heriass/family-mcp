@@ -1672,7 +1672,9 @@ function expiring() {
       state.expired = false;
     }
 
-    if (state.expired && input.href === PARENT_URL) return new Response('', { status: 401 });
+    if (state.expired && input.href === PARENT_URL &&
+        (new Headers(init?.headers).get('cookie') ?? '').includes('IMHome='))
+      return new Response('', { status: 401 });
 
     return routes.fetch(input, init);
   };
