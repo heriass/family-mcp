@@ -3,13 +3,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use crate::error::{Fail, Result};
 
-pub const PROBES: [&str; 3] = ["markConversationRead", "markMessageRead", "sendConversationMessage"];
+pub const PROBES: [&str; 28] = ["SetAttendance", "UpdateAttendance", "RegisterAttendance", "AttendEvent", "RespondToEvent", "AcceptEvent", "DeclineEvent", "JoinEvent", "LeaveEvent", "SetParticipation", "UpdateParticipation", "Rsvp", "ReportAbsence", "RegisterAbsence", "SignUp", "Register", "Enroll", "AnswerSurvey", "SubmitSurvey", "SubmitForm", "SendMessage", "CreateConversation", "StartConversation", "ReactToMessage", "CreatePost", "CommentPost", "LikePost", "UpdateNotificationSettings"];
+pub const QUERY_PROBES: [&str; 17] = ["feed", "posts", "news", "announcements", "notifications", "surveys", "forms", "attendance", "statistics", "documents", "files", "payments", "invoices", "registrations", "products", "events", "eventDetails"];
+
+#[derive(Clone, Copy)]
+pub enum Root { Mutation, Query }
+impl Root {
+    pub fn label(self) -> &'static str { match self { Self::Mutation => "Mutation", Self::Query => "Query" } }
+    pub fn operation(self) -> &'static str { match self { Self::Mutation => "mutation", Self::Query => "query" } }
+}
 
 #[derive(Clone)]
-pub struct Request { pub filter: String, pub max_chars: usize }
+pub struct Request { pub filter: String, pub max_chars: usize, pub root: Root, pub probes: Vec<String>, pub describe_fields: Vec<String>, pub explicit_probes: bool }
 
 pub fn input(args: &Map<String, Value>) -> std::result::Result<Request, String> {
-    if args.keys().any(|key| !["filter", "max_chars"].contains(&key.as_str())) { return Err("Unrecognized discovery input field.".to_owned()); }
+    if args.keys().any(|key| !["filter", "max_chars", "root", "probes", "describe_fields"].contains(&key.as_str())) { return Err("Unrecognized discovery input field.".to_owned()); }
     let filter = match args.get("filter") {
         None => String::new(), Some(Value::String(filter)) if filter.chars().count() <= 256 => filter.to_lowercase(),
         _ => return Err("filter: expected a string of at most 256 characters.".to_owned()),
@@ -19,8 +27,23 @@ pub fn input(args: &Map<String, Value>) -> std::result::Result<Request, String> 
         Some(value) if value.as_f64().is_some_and(|n| n.fract() == 0.0 && (1000.0..=200_000.0).contains(&n)) => value.as_f64().unwrap_or(60_000.0) as usize,
         _ => return Err("max_chars: expected an integer from 1000 to 200000.".to_owned()),
     };
-    Ok(Request { filter, max_chars })
+    let root = match args.get("root") {
+        None => Root::Mutation, Some(Value::String(value)) if value == "Mutation" => Root::Mutation,
+        Some(Value::String(value)) if value == "Query" => Root::Query,
+        _ => return Err("root: expected Mutation or Query.".to_owned()),
+    };
+    let names = |key: &str, maximum: usize| -> std::result::Result<Option<Vec<String>>, String> {
+        match args.get(key) {
+            None => Ok(None),
+            Some(Value::Array(values)) if values.len() <= maximum => values.iter().map(|value| value.as_str().filter(|value| probe_name(value)).map(str::to_owned).ok_or_else(|| format!("{key}: names must match ^[A-Za-z_][A-Za-z0-9_]{{0,63}}$."))).collect::<std::result::Result<Vec<_>, _>>().map(Some),
+            _ => Err(format!("{key}: expected at most {maximum} field names.")),
+        }
+    };
+    let probes = names("probes", 60)?.unwrap_or_else(|| match root { Root::Mutation => PROBES.to_vec(), Root::Query => QUERY_PROBES.to_vec() }.into_iter().map(str::to_owned).collect());
+    Ok(Request { filter, max_chars, root, probes, describe_fields: names("describe_fields", 20)?.unwrap_or_default(), explicit_probes: args.contains_key("probes") })
 }
+
+pub fn probe_name(text: &str) -> bool { text.len() <= 64 && name(text) }
 
 pub fn name(text: &str) -> bool {
     !text.is_empty() && text.len() <= 256
@@ -38,8 +61,14 @@ pub fn introspection_query() -> String {
 /// the whole document before execution. @skip(true) additionally prevents a candidate resolver
 /// from running even if the candidate exists. No user input is interpolated in these probes.
 /// https://spec.graphql.org/October2021/#sec-Validating-Requests
+#[cfg(test)]
 pub fn probe_query(operation: &str, field: &str) -> String {
-    format!("mutation {operation} {{ __typename __describe_api_invalid {field} @skip(if: true) }}")
+    document(operation, Root::Mutation, field, false)
+}
+
+pub fn document(operation: &str, root: Root, field: &str, empty_input: bool) -> String {
+    let args = if empty_input { "(input: {})" } else { "" };
+    format!("{} {operation} {{ __describe_api_invalid {field}{args} @skip(if: true) }}", root.operation())
 }
 
 pub fn cookie_values(serialized: &Value) -> Vec<String> {
@@ -85,9 +114,83 @@ pub fn suggestions(message: &str) -> Vec<String> {
     lower.find("did you mean").map(|at| quoted_names(&message[at..])).unwrap_or_default()
 }
 
+pub fn validation_root(messages: &[String]) -> Option<String> {
+    messages.iter().find_map(|message| {
+        if !message.to_ascii_lowercase().starts_with("cannot query field") { return None; }
+        quoted_names(message).get(1).filter(|root| name(root)).cloned()
+    })
+}
+
+fn quoted_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new(); let mut rest = text;
+    while let Some(at) = rest.find(['"', '\'']) {
+        let quote = rest.as_bytes()[at]; rest = &rest[at + 1..];
+        let Some(end) = rest.find(char::from(quote)) else { break; };
+        if end <= 256 { tokens.push(rest[..end].to_owned()); }
+        rest = &rest[end + 1..];
+    }
+    tokens
+}
+
+fn validation_type(text: &str) -> bool {
+    fn parse(bytes: &[u8], at: &mut usize, depth: usize) -> bool {
+        if depth > 16 { return false; }
+        if bytes.get(*at) == Some(&b'[') {
+            *at += 1;
+            if !parse(bytes, at, depth + 1) || bytes.get(*at) != Some(&b']') { return false; }
+            *at += 1;
+        } else {
+            let start = *at;
+            while bytes.get(*at).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_') { *at += 1; }
+            if start == *at || !(bytes[start].is_ascii_alphabetic() || bytes[start] == b'_') { return false; }
+        }
+        if bytes.get(*at) == Some(&b'!') { *at += 1; }
+        true
+    }
+    let mut at = 0;
+    text.len() <= 128 && parse(text.as_bytes(), &mut at, 0) && at == text.len()
+}
+
+/// Reconstruct only documented GraphQL validation metadata; never echo the server body.
+pub fn argument_message(message: &str) -> Option<Value> {
+    let lower = message.to_ascii_lowercase(); let tokens = quoted_tokens(message);
+    let field = tokens.first()?;
+    if !field.split('.').all(probe_name) { return None; }
+    if lower.starts_with("field ") && lower.contains(" argument ") && lower.contains("is required") && tokens.len() >= 3 {
+        if !probe_name(&tokens[1]) || !validation_type(&tokens[2]) { return None; }
+        return Some(json!({"kind":"argument_required", "field":field, "name":tokens[1], "type":tokens[2]}));
+    }
+    if lower.starts_with("field ") && lower.contains("of required type") && tokens.len() >= 2 && validation_type(&tokens[1]) {
+        return Some(json!({"kind":"input_field_required", "field":field, "name":field.rsplit('.').next(), "type":tokens[1]}));
+    }
+    if lower.starts_with("field ") && (lower.contains("must have a selection") || lower.contains("must not have a selection")) {
+        return Some(json!({"kind":if lower.contains("must not") {"selection_forbidden"} else {"selection_required"}, "field":field}));
+    }
+    None
+}
+
+pub fn reported_input(messages: &[String]) -> bool {
+    messages.iter().filter_map(|message| argument_message(message)).any(|row| row["kind"] == "argument_required" && row["name"] == "input")
+}
+
+pub fn described(field: &str, root: Root, stages: Vec<Value>, messages: &[String], secrets: &[String]) -> Value {
+    let parsed = messages.iter().filter_map(|message| argument_message(message)).collect::<Vec<_>>();
+    let mut arguments = Vec::new(); let mut inputs = Vec::new(); let mut selection = None;
+    for row in parsed {
+        match row["kind"].as_str() {
+            Some("argument_required") => if !arguments.contains(&row) { arguments.push(row); },
+            Some("input_field_required") => if !inputs.contains(&row) { inputs.push(row); },
+            Some("selection_required") => selection = Some(true), Some("selection_forbidden") => selection = Some(false), _ => {},
+        }
+    }
+    let mut value = json!({"field":field, "root":root.label(), "stages":stages, "requiredArguments":arguments, "requiredInputFields":inputs, "selectionSetRequired":selection});
+    scrub(&mut value, secrets); value
+}
+
 pub fn safe_error(message: &str, secrets: &[String]) -> String {
     let lower = message.to_ascii_lowercase();
     if lower.contains("introspection") { return "GraphQL introspection is disabled or not permitted.".to_owned(); }
+    if let Some(mut row) = argument_message(message) { scrub(&mut row, secrets); return format!("GraphQL validation: {row}"); }
     if lower.starts_with("cannot query field") {
         let fields = quoted_names(message);
         let field = fields.first().map(|name| safe_text(name, secrets)).unwrap_or_else(|| "[unknown field]".to_owned());
@@ -184,7 +287,7 @@ pub fn schema(data: &Value, request: &Request, secrets: &[String]) -> Result<Val
 
 fn chars(value: &Value) -> usize { value.to_string().chars().count() }
 
-fn limit(mut value: Value, maximum: usize) -> Value {
+pub fn limit(mut value: Value, maximum: usize) -> Value {
     if chars(&value) <= maximum { return value; }
     let total = chars(&value);
     value["truncated"] = json!(true);
@@ -199,7 +302,7 @@ fn limit(mut value: Value, maximum: usize) -> Value {
             object.shift_remove(&last);
         }
     }
-    for key in ["mutation", "query", "probes", "suggestions", "errors"] {
+    for key in ["mutation", "query", "probes", "suggestions", "errors", "describedFields"] {
         while chars(&value) > maximum {
             let Some(array) = value[key].as_array_mut() else { break; };
             if array.pop().is_none() { break; }
@@ -212,16 +315,52 @@ pub fn fallback(errors: Vec<String>, mutation_type: Option<String>, probes: Vec<
     let suggestions = suggestions.into_iter().filter(|text| text.to_lowercase().contains(&request.filter)).collect::<BTreeSet<_>>();
     let mut value = json!({"introspection": false, "errors": errors.iter().map(|error| safe_text(error, secrets)).collect::<Vec<_>>(), "mutationType": mutation_type, "probes": probes, "suggestions": suggestions, "complete": false, "note": "Only server validation suggestions are available; this is not a complete mutation inventory. No mutation resolver was invoked.", "truncated": false});
     // Only controlled names and safe diagnostics enter probes; scrub rotated cookie values again.
-    fn scrub(value: &mut Value, secrets: &[String]) {
-        match value { Value::String(text) => *text = safe_text(text, secrets), Value::Array(items) => for item in items { scrub(item, secrets); }, Value::Object(object) => for value in object.values_mut() { scrub(value, secrets); }, _ => {} }
-    }
     scrub(&mut value, secrets);
     Ok(limit(value, request.max_chars))
+}
+
+pub fn scrub(value: &mut Value, secrets: &[String]) {
+    match value { Value::String(text) => *text = safe_text(text, secrets), Value::Array(items) => for item in items { scrub(item, secrets); }, Value::Object(object) => for value in object.values_mut() { scrub(value, secrets); }, _ => {} }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn field_names_limits_and_both_root_guards_are_validated() {
+        for field in ["MarkAsRead", "_field", "field1", &"x".repeat(64)] { assert!(probe_name(field)); }
+        for field in ["", "1field", "x(input: {})", "x } mutation { write", "x-y", &"x".repeat(65)] { assert!(!probe_name(field)); }
+        assert!(input(json!({"probes":vec!["field";61]}).as_object().unwrap()).is_err());
+        assert!(input(json!({"describe_fields":vec!["field";21]}).as_object().unwrap()).is_err());
+        assert!(input(json!({"root":"Other"}).as_object().unwrap()).is_err());
+        let defaults = input(&Map::new()).unwrap(); assert_eq!(defaults.probes.len(),28);
+        let query = input(json!({"root":"Query"}).as_object().unwrap()).unwrap(); assert_eq!(query.probes.len(),17);
+        for root in [Root::Mutation, Root::Query] {
+            for empty in [false, true] {
+                for field in ["MarkAsRead", "MessageReply", "__typename"] {
+                    let query = document("DescribeApiTest", root, field, empty);
+                    assert!(query.starts_with(root.operation())); assert!(query.contains("__describe_api_invalid"));
+                    assert!(query.contains("@skip(if: true)")); assert!(!query.contains("{ __typename "));
+                    assert_eq!(query.contains("(input: {})"),empty);
+                }
+            }
+        }
+    }
+    #[test]
+    fn argument_validation_metadata_is_parsed_and_private_diagnostics_are_redacted() {
+        let required = "Field \"MessageReply\" argument \"input\" of type \"ReplyInput!\" is required, but it was not provided.";
+        let nested = "Field \"text\" of required type \"String!\" was not provided.";
+        assert_eq!(argument_message(required).unwrap()["type"],"ReplyInput!");
+        assert!(reported_input(&[required.to_owned()]));
+        assert_eq!(argument_message(nested).unwrap()["kind"],"input_field_required");
+        let selected = "Field \"MessageReply\" must have a selection of subfields. Did you mean \"MessageReply { ... }\"?";
+        assert_eq!(argument_message(selected).unwrap()["kind"],"selection_required");
+        assert!(validation_type("[ID!]!")); assert!(!validation_type("ID!!")); assert!(!validation_type("String! bearer token"));
+        let out = described("MessageReply",Root::Mutation,vec![],&[required.to_owned(),nested.to_owned(),selected.to_owned()],&[]);
+        assert_eq!(out["selectionSetRequired"],true); assert_eq!(out["requiredArguments"][0]["name"],"input");
+        let secret = vec!["MessageReply".to_owned()]; assert!(!safe_error(required,&secret).contains("MessageReply"));
+        assert!(!safe_text("person@example.test 0101991239 https://example.test/?secret=token",&[]).contains("example.test"));
+    }
     #[test]
     fn wrapper_types_render_and_probes_cannot_invoke_candidate_mutations() {
         let id = json!({"kind":"SCALAR","name":"ID"});
