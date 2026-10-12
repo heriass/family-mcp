@@ -71,3 +71,8 @@ fn the_startup_cases_pass_against_this_binary() {
 fn the_schema_discovery_cases_pass_against_this_binary() {
     bun_test("describe.test.ts", 2);
 }
+
+#[test]
+fn the_guarded_field_discovery_cases_pass_against_this_binary() {
+    bun_test("describe-fields.test.ts", 1);
+}
