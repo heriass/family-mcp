@@ -12,6 +12,54 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn debug_logs_each_redirect_without_secrets_and_is_off_unless_exactly_one() {
+    for debug in [None, Some("0"), Some("true"), Some("1")] {
+        let home = Home::new();
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", server.local_addr().unwrap());
+        let serving = std::thread::spawn(move || {
+            for step in 0..2 {
+                let (mut stream, _) = server.accept().unwrap();
+                let mut request = BufReader::new(stream.try_clone().unwrap());
+                loop {
+                    let mut line = String::new();
+                    request.read_line(&mut line).unwrap();
+                    if line == "\r\n" || line.is_empty() { break; }
+                }
+                if step == 0 {
+                    stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: https://minn.infomentor.is/error?oauth_token=secret-token\r\nSet-Cookie: transaction=secret-cookie; Path=/; Secure\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                } else {
+                    let body = "<html><h1>Service Unavailable</h1><p>secret-user secret-password secret-cookie secret-token ?secret-query</p></html>";
+                    write!(stream, "HTTP/1.1 503 Unavailable\r\nSet-Cookie: response=secret-response; Path=/; Secure\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                }
+            }
+        });
+        let mut command = home.command(Some(&origin), &["login"]);
+        command.env("INFOMENTOR_USERNAME", "secret-user").env("INFOMENTOR_PASSWORD", "secret-password");
+        if let Some(value) = debug { command.env("INFOMENTOR_DEBUG", value); }
+        let output = command.output().unwrap();
+        serving.join().unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("secret-"), "{stderr}");
+        assert!(!stderr.contains('?'), "{stderr}");
+        assert!(stderr.ends_with("InfoMentor returned an error. Try again later.\n"));
+        if debug == Some("1") {
+            assert_eq!(stderr.matches("[infomentor-debug] GET").count(), 2);
+            assert!(stderr.contains("status=302"));
+            assert!(stderr.contains("status=503"));
+            assert!(stderr.contains("location=Some(\"https://minn.infomentor.is/error\")"));
+            assert!(stderr.contains("sent_cookies=[\"transaction\"]"));
+            assert!(stderr.contains("set_cookies=[\"response\"]"));
+            assert_eq!(stderr.matches("mode=browser").count(), 2);
+            assert!(stderr.contains("error_body=\"<html><h1>Service Unavailable</h1><p>[redacted]</p></html>\""));
+        } else {
+            assert_eq!(stderr, "InfoMentor returned an error. Try again later.\n");
+        }
+    }
+}
+
 struct Home(PathBuf);
 
 impl Home {
