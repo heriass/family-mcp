@@ -85,14 +85,14 @@ test('disabled introspection preserves validation suggestions and never invokes 
   const served=await serveStdio(path,(url,init)=>{
     assert.ok(url.endsWith('/graphql'));const body=JSON.parse(String(init.body));operations.push(body.operationName);
     if(body.operationName==='DescribeApi')return Response.json({errors:[{message:'Introspection disabled private-access person@example.test 0101991239'}]},{status:400});
-    if(body.operationName==='DescribeApiMutationType')return Response.json({data:{__typename:'RootMutation'}});
     assert.match(body.query,/__describe_api_invalid/);assert.match(body.query,/@skip\(if: true\)/);
+    if(body.operationName==='DescribeApiRootType')return Response.json({errors:[{message:'Cannot query field "__describe_api_invalid" on type "RootMutation".'}]},{status:400});
     if(!body.query.includes('@skip(if: true)'))writes++;
     return Response.json({errors:[{message:'Cannot query field "markConversationRead" on type "RootMutation". Did you mean "markConversationAsRead" or "readConversation"? private-access'}]},{status:400});
   });
   const client=new Client({name:'describe-disabled-test',version:'1.0.0'});await client.connect(served.transport);
   try{
-    const response=await client.callTool({name:'describe_api',arguments:{}});assert.ok(!response.isError,JSON.stringify(response));
+    const response=await client.callTool({name:'describe_api',arguments:{probes:['markConversationRead','markMessageRead','sendConversationMessage']}});assert.ok(!response.isError,JSON.stringify(response));
     assert.equal(response.structuredContent?.introspection,false);assert.equal(response.structuredContent?.mutationType,'RootMutation');
     assert.deepEqual(response.structuredContent?.suggestions,['markConversationAsRead','readConversation']);
     assert.equal(operations.length,5);assert.equal(writes,0);
