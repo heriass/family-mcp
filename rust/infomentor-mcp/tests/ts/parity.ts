@@ -41,7 +41,7 @@ const PARENT = 'https://minn.infomentor.is/';
 /** What the fake records of each request: the headers both sides must agree on, and the body. */
 type Seen = { method: string; url: string; headers: Record<string, string | null>; body: string };
 
-const COMPARED_HEADERS = ['accept', 'content-type', 'cookie', 'origin', 'referer', 'user-agent'];
+const COMPARED_HEADERS = ['accept', 'accept-language', 'content-type', 'cookie', 'origin', 'referer', 'user-agent'];
 
 /** The fake InfoMentor's state for one side's run of a scenario. */
 type State = {
@@ -1366,6 +1366,17 @@ async function run(side: 'ts' | 'rust', scenario: Scenario) {
   // The Rust fix intentionally adds the browser-style OAuth prefix. Its full exchange is
   // asserted in loopback.test.ts; compare the remaining legacy flow here without that prefix.
   if (side === 'rust') {
+    // Login-only header changes are intentional; loopback.test.ts asserts all login hops and
+    // the return to API headers. Keep every other header/body/output comparison here.
+    for (const request of fake.seen) {
+      if (request.headers['user-agent'] !== 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36') continue;
+      if (request.headers.accept !== 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' ||
+          request.headers['accept-language'] !== 'is-IS,is;q=0.9,en;q=0.8')
+        throw new Error('Unexpected browser login headers');
+      request.headers.accept = 'application/json, text/html;q=0.9';
+      request.headers['user-agent'] = 'Bun/1.4.2';
+      request.headers['accept-language'] = null;
+    }
     for (let i = 0; i < fake.seen.length; i++) {
       if (new URLSearchParams(fake.seen[i]?.body).get('oauth_token') !== 'bootstrap&token') continue;
       const first = fake.seen[i - 2];
