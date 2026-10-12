@@ -1,0 +1,8 @@
+{"id":"dominos/contract/no-session-commands","homes":[
+{"env":{"DOMINOS_SESSION_FILE":"<home>/session.json"},"steps":[
+{"mode":"contract:verify"},
+{"cli":["auth","status"],"code":1,"stdout":"","stderr":"No saved Domino’s session. Run dominos-mcp auth login first.\n","exchanges":[]},
+{"cli":["auth","migrate"],"code":1,"stdout":"","stderr":"No saved Domino’s session. Run dominos-mcp auth login first.\n","exchanges":[]},
+{"cli":["auth","logout"],"code":0,"stdout":"Local Domino’s login removed.\n","stderr":"","exchanges":[]}
+],"requests":0,"store":{"store":"none"},"files":["config/ 700","config/dominos-mcp/ 700"]}
+]}

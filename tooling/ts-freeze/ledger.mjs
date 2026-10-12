@@ -276,9 +276,16 @@ function literalAt(tokens, index, source) {
  * @returns {number}
  */
 function closing(tokens, open) {
-  const pairs = { '(': ')', '[': ']', '{': '}' };
+  const pairs = new Map([
+    ['(', ')'],
+    ['[', ']'],
+    ['{', '}'],
+  ]);
+
   const first = tokens[open]?.text ?? '';
-  const closer = pairs[/** @type {'(' | '[' | '{'} */ (first)];
+  const closer = pairs.get(first);
+
+  if (!closer) throw new RangeError(`not an opener: ${first}`);
   let depth = 0;
 
   for (let index = open; index < tokens.length; index++) {
@@ -886,6 +893,193 @@ function problemsWith(cases, text, harnessFiles) {
   return problems;
 }
 
+/** A Rust test a target names: `[rust/<crate>/<dir>/]<file>.rs::[<module>::]<fn>`. */
+const RUST_TARGET = /(planned )?((?:rust\/(?:[\w.-]+\/)+)?[\w-]+\.rs)::((?:\w+::)*\w+)/g;
+
+/** A fixture a target names: `<server>/<set>/<case>`, the case perhaps with `{a,b}` alternatives. */
+const FIXTURE_TARGET =
+  /(planned )?\b(abler|infomentor|inna|kronan|dominos)\/(parity|contract|store|pty)\/(\*|[\w-]*(?:\{[\w,-]+\}[\w-]*)?)/g;
+
+/**
+ * The crate whose `tests/` a bare `<file>.rs::<fn>` in a row of `suite` names.
+ * @param {string} suite
+ */
+function suiteCrate(suite) {
+  const name = suite.split(' ').at(-1) ?? '';
+
+  return name === 'session-store' ? 'family-store' : name;
+}
+
+/**
+ * Whether `source` defines `name` as a test: a `fn name` whose attributes above it (or on its own
+ * line) include `#[test]` or `#[tokio::test]`, with only attributes and comments between.
+ * @param {string} source
+ * @param {string} name
+ */
+function definesTest(source, name) {
+  const lines = source.split('\n');
+
+  const definition = new RegExp(
+    String.raw`^\s*(#\[test\]\s*)?(pub(\([^)]*\))?\s+)?(async\s+)?fn\s+${name}\s*[(<]`,
+  );
+
+  return lines.some((line, index) => {
+    const found = definition.exec(line);
+
+    if (!found) return false;
+
+    if (found[1]) return true;
+
+    for (let above = index - 1; above >= 0; above -= 1) {
+      const text = (lines[above] ?? '').trim();
+
+      if (/^#\[(tokio::)?test\b/.test(text)) return true;
+
+      if (!text.startsWith('#[') && !text.startsWith('//')) return false;
+    }
+
+    return false;
+  });
+}
+
+/**
+ * `a-{b,c}-d` as `a-b-d` and `a-c-d`.
+ * @param {string} text
+ */
+function alternatives(text) {
+  const braces = /^(.*)\{([^}]*)\}(.*)$/.exec(text);
+
+  return braces
+    ? (braces[2] ?? '').split(',').map((part) => `${braces[1]}${part}${braces[3]}`)
+    : [text];
+}
+
+/**
+ * Every target a row names that does not exist. A Rust target must be a test function in that
+ * file; a fixture target must be a frozen file its crate's tests read: `parity` and `contract`
+ * cases named in `tests/replay.rs`, `store` states named in a test file, and `pty` outcomes frozen
+ * for macOS and Linux beside a `prompt.rs` test of that name. A target written `planned …` belongs
+ * to a later PR and must not exist yet; every other target must. An existing-test row needs at
+ * least one implemented Rust target, a new-test row a Rust target, a fixture row a fixture or Rust
+ * target.
+ * @param {{ suite: string, site: string, name: string, cells: string[] }[]} rows
+ * @param {(path: string) => string | null} read the file's text, or null when it is absent
+ * @returns {string[]}
+ */
+function targetProblems(rows, read) {
+  /** @type {string[]} */
+  const problems = [];
+
+  for (const row of rows) {
+    const outcome = row.cells[5] ?? '';
+    const target = row.cells[6] ?? '';
+    const at = `${row.site} ${row.name}`;
+    let implemented = 0;
+    let named = 0;
+
+    for (const match of target.matchAll(RUST_TARGET)) {
+      named += 1;
+      const planned = match[1] !== undefined;
+
+      const file = (match[2] ?? '').startsWith('rust/')
+        ? (match[2] ?? '')
+        : `rust/${suiteCrate(row.suite)}/tests/${match[2] ?? ''}`;
+
+      const name = (match[3] ?? '').split('::').at(-1) ?? '';
+      const source = read(file);
+      const exists = source !== null && definesTest(source, name);
+
+      if (planned && exists)
+        problems.push(`planned target exists, mark it implemented: ${at}: ${file}::${name}`);
+      else if (!planned && !exists) problems.push(`no such test: ${at}: ${file}::${name}`);
+
+      if (!planned && exists) implemented += 1;
+    }
+
+    for (const match of target.matchAll(FIXTURE_TARGET)) {
+      named += 1;
+      const planned = match[1] !== undefined;
+      const [server, set] = [match[2] ?? '', match[3] ?? ''];
+      const tests = `rust/${server}-mcp/tests`;
+
+      for (const name of alternatives(match[4] ?? '')) {
+        /** @type {boolean} */
+        let exists;
+
+        if (name === '*') {
+          const replay = read(`${tests}/replay.rs`);
+          exists =
+            read(`${tests}/fixtures/${set}/PROVENANCE.md`) !== null &&
+            replay !== null &&
+            replay.includes(`"${set}"`);
+        } else if (set === 'pty') {
+          const prompt = read(`${tests}/prompt.rs`);
+          exists =
+            read(`${tests}/fixtures/pty/macos.json`) !== null &&
+            read(`${tests}/fixtures/pty/linux.json`) !== null &&
+            prompt !== null &&
+            definesTest(prompt, name.replaceAll('-', '_'));
+        } else {
+          const readers =
+            set === 'store'
+              ? ['money.rs', 'persistence.rs', 'session.rs', 'support/mod.rs'].map((file) =>
+                  read(`${tests}/${file}`),
+                )
+              : [read(`${tests}/replay.rs`)];
+
+          exists =
+            name !== '' &&
+            read(`${tests}/fixtures/${set}/${name}.json`) !== null &&
+            readers.some((source) => source !== null && source.includes(`"${name}"`));
+        }
+
+        if (planned && exists)
+          problems.push(
+            `planned fixture exists, mark it implemented: ${at}: ${server}/${set}/${name}`,
+          );
+        else if (!planned && !exists)
+          problems.push(`no such fixture: ${at}: ${server}/${set}/${name}`);
+      }
+    }
+
+    if (outcome === 'existing Rust test' && implemented === 0)
+      problems.push(`existing-test row names no implemented test: ${at}`);
+    else if (
+      outcome === 'new executing Rust test' &&
+      named - [...target.matchAll(FIXTURE_TARGET)].length === 0
+    )
+      problems.push(`new-test row names no Rust test: ${at}`);
+    else if (outcome === 'fixture row' && named === 0)
+      problems.push(`fixture row names no fixture: ${at}`);
+  }
+
+  return problems;
+}
+
+/**
+ * A file's text under the repository root, or null when there is none.
+ * @param {string} path
+ * @returns {string | null}
+ */
+function readTarget(path) {
+  try {
+    return readFileSync(join(root, path), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A ledger row of the probe crate, for the self-check of targets.
+ * @type {(outcome: string, target: string) => { suite: string, site: string, name: string, cells: string[] }}
+ */
+const targetProbe = (outcome, target) => ({
+  suite: 'drop-in probe-mcp',
+  site: 'probe.ts:1',
+  name: 'probe',
+  cells: ['drop-in probe-mcp', '`probe.ts:1`', 'probe', '', 'money', outcome, target],
+});
+
 /**
  * The adversarial self-check: every registration form a reviewer probed must either be found (so
  * a ledger without its row fails) or stop the run; none may yield no case. Throws on any miss.
@@ -1020,7 +1214,7 @@ function selfcheck() {
     misses.push(`scenario array: ${JSON.stringify(mapped)}`);
 
   // Every other element or member form stops the run.
-  for (const [form, elements] of [
+  for (const [form, body] of [
     ['shorthand name', '{ name }'],
     ['quoted key', '{ "name": "lost" }'],
     ['quoted other key', "{ name: 'lost', 'steps': [] }"],
@@ -1038,7 +1232,7 @@ function selfcheck() {
     ['hole', "{ name: 'a' }, , { name: 'b' }"],
   ]) {
     try {
-      const found = scenariosIn('parity probe', 'probe.ts', `const scenarios = [${elements}];`);
+      const found = scenariosIn('parity probe', 'probe.ts', `const scenarios = [${body}];`);
       misses.push(`scenario ${form}: not refused, found ${JSON.stringify(found)}`);
     } catch {
       // Refused, as required.
@@ -1068,6 +1262,73 @@ function selfcheck() {
     // Refused, as required.
   }
 
+  // Targets: each probe row must give exactly the problems listed (by their first words).
+  /** @type {Record<string, string>} */
+  const tree = {
+    'rust/probe-mcp/tests/replay.rs':
+      '#[test]\nfn every_frozen_parity_scenario_replays_through_the_binary() {}\nconst CASES = ["kept"];\nreplay("parity");\n',
+    'rust/probe-mcp/tests/money.rs':
+      '/// Doc.\n#[test]\n#[ignore]\nfn sends_once() {}\nfn helper() {}\n',
+    'rust/probe-mcp/src/lib.rs': 'mod tests {\n    #[tokio::test]\n    async fn unit() {}\n}\n',
+    'rust/probe-mcp/tests/fixtures/parity/kept.json': '{}',
+    'rust/probe-mcp/tests/fixtures/parity/unread.json': '{}',
+    'rust/probe-mcp/tests/fixtures/parity/PROVENANCE.md': '',
+  };
+
+  /** @type {[string, string, string[]][]} */
+  const targetForms = [
+    ['existing Rust test', 'rust/probe-mcp/tests/money.rs::sends_once', []],
+    ['existing Rust test', 'rust/probe-mcp/src/lib.rs::tests::unit', []],
+    ['new executing Rust test', 'money.rs::sends_once (bare, in the row crate)', []],
+    [
+      'existing Rust test',
+      'rust/probe-mcp/tests/replay.rs::every_frozen_parity_scenario_replays',
+      ['no such test', 'existing-test row'],
+    ],
+    [
+      'existing Rust test',
+      'rust/probe-mcp/tests/money.rs::helper',
+      ['no such test', 'existing-test row'],
+    ],
+    [
+      'existing Rust test',
+      'rust/probe-mcp/tests/money.rs::sends_once (+ N planned money.rs::later)',
+      [],
+    ],
+    ['existing Rust test', 'planned rust/probe-mcp/tests/money.rs::later', ['existing-test row']],
+    ['new executing Rust test', 'planned money.rs::sends_once', ['planned target exists']],
+    ['new executing Rust test', 'money.rs::later', ['no such test']],
+    ['new executing Rust test', 'a sentence naming no test', ['new-test row']],
+    ['fixture row', 'probe/parity/kept', []],
+    ['fixture row', 'probe/parity/{kept,unread}', ['no such fixture']],
+    ['fixture row', 'probe/parity/missing', ['no such fixture']],
+    ['fixture row', 'planned probe/parity/missing', []],
+    ['fixture row', 'planned probe/parity/kept', ['planned fixture exists']],
+    ['fixture row', 'frozen somewhere', ['fixture row names']],
+    ['fixture row', 'probe/parity/* shapes', []],
+    ['fixture row', 'probe/contract/* shapes', ['no such fixture']],
+    [
+      'obsolete',
+      'replaced by rust/probe-mcp/tests/replay.rs::every_frozen_parity_scenario_replays',
+      ['no such test'],
+    ],
+  ];
+
+  for (const [outcome, target, expected] of targetForms) {
+    // The probe crate's fixtures are read under `probe-mcp` like a server's.
+    const found = targetProblems(
+      [targetProbe(outcome, target.replaceAll('probe/', 'abler/'))],
+      (path) => tree[path.replace('rust/abler-mcp/', 'rust/probe-mcp/')] ?? null,
+    );
+
+    const kinds = found.map(
+      (problem) => expected.find((prefix) => problem.startsWith(prefix)) ?? problem,
+    );
+
+    if (JSON.stringify(kinds) !== JSON.stringify(expected))
+      misses.push(`target ${outcome}: ${target}: ${JSON.stringify(found)}`);
+  }
+
   if (misses.length) throw new RangeError(`self-check failed:\n${misses.join('\n')}`);
 }
 
@@ -1088,7 +1349,11 @@ try {
   } else if (command === 'check') {
     selfcheck();
     const text = readFileSync(join(root, LEDGER), 'utf8');
-    const problems = problemsWith(enumerate(), text, harnesses());
+
+    const problems = [
+      ...problemsWith(enumerate(), text, harnesses()),
+      ...targetProblems(ledgerRows(text), readTarget),
+    ];
 
     if (problems.length) {
       process.stderr.write(`${problems.join('\n')}\n`);

@@ -148,6 +148,15 @@
         "@types/node": "^22.20.2",
       },
     },
+    "tooling/ts-freeze": {
+      "name": "@family-mcp/ts-freeze",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@family-mcp/tsconfig": "workspace:*",
+        "@types/bun": "^1.2.19",
+        "@types/node": "^22.20.2",
+      },
+    },
     "tooling/tsconfig": {
       "name": "@family-mcp/tsconfig",
       "version": "0.0.0",
@@ -161,6 +170,8 @@
     "@family-mcp/release-tooling": ["@family-mcp/release-tooling@workspace:tooling/release"],
 
     "@family-mcp/session-store": ["@family-mcp/session-store@workspace:packages/session-store"],
+
+    "@family-mcp/ts-freeze": ["@family-mcp/ts-freeze@workspace:tooling/ts-freeze"],
 
     "@family-mcp/tsconfig": ["@family-mcp/tsconfig@workspace:tooling/tsconfig"],
 

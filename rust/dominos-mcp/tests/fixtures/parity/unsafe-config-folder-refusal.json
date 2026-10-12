@@ -1,0 +1,6 @@
+{"id":"dominos/parity/unsafe-config-folder-refusal","homes":[
+{"env":{},"steps":[
+{"dir":"config/dominos-mcp","mode":493},
+{"cli":["bad"],"code":1,"stdout":"","stderr":"dominos-mcp: cannot start. Other users can open this store folder.\n  Path: '<home>/config/dominos-mcp'\n  Fix:  chmod 700 '<home>/config/dominos-mcp'\n","exchanges":[]}
+],"requests":0,"store":{"store":"none"},"files":["config/ 755","config/dominos-mcp/ 755"]}
+]}

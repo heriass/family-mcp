@@ -1,0 +1,243 @@
+{
+  "id": "dominos/pty/the-hidden-prompt-reads-keystrokes-like-the-typescript-cli",
+  "platform": "linux",
+  "cases": [
+    {
+      "keys": "5550123\r123456\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "﻿5550123\r123456\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "+354 555-0123x\r123456x\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "bad\u00155550123\r12x\b3456\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "5550123\r\u001b[A123456\r",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): The SMS code must contain six digits.\n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "bad\r",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): Use a seven-digit Icelandic phone number, optionally prefixed with +354.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "555013\u001b[D2\r123456\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "x5550123\u0001\u001b[3~\u0005\r123456\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "5550123\r12345x\u001b[D\u0004\u00056\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Signed in. Session saved encrypted.\n",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): \n",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 ",
+          "/api/token grant_type=password&username=3545550123&password=123456&authentication_type=sms",
+          "bearer synthetic-access",
+          "/api/user/newuser "
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "555\u0003",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): Sign-in cancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "\u0004",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): Sign-in cancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "555",
+      "end": "hang-up",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): Domino’s MCP failed. Check the local configuration.\n",
+        "sent": [],
+        "restored": null
+      },
+      "allowed": [
+        {
+          "code": 1,
+          "signal": null,
+          "stdout": "",
+          "stderr": "Icelandic phone number (input hidden): Domino’s MCP failed. Check the local configuration.\n",
+          "sent": [],
+          "restored": null
+        },
+        {
+          "code": 1,
+          "signal": null,
+          "stdout": "",
+          "stderr": "Icelandic phone number (input hidden): Sign-in cancelled.\n",
+          "sent": [],
+          "restored": null
+        }
+      ]
+    },
+    {
+      "keys": "555",
+      "end": "signal:TERM",
+      "outcome": {
+        "code": null,
+        "signal": 15,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): ",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "555",
+      "end": "signal:INT",
+      "outcome": {
+        "code": null,
+        "signal": 2,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): ",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "5550123\r12",
+      "end": "signal:TERM",
+      "outcome": {
+        "code": null,
+        "signal": 15,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nSMS sent. Six-digit code (input hidden): ",
+        "sent": [
+          "/api/login/sendPin?phoneNumber=3545550123 "
+        ],
+        "restored": true
+      }
+    }
+  ]
+}

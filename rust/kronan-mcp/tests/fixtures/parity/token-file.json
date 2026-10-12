@@ -1,0 +1,7 @@
+{"id":"kronan/parity/token-file","env":{"KRONAN_TOKEN_FILE":"nested/../token.json"},"steps":[
+{"file":"token.json","text":"{\"version\":1,\"token\":\"synthetic-token-0123456789\"}\n"},
+{"mode":"ok"},
+{"serve":true,"results":[
+{"call":["auth_status",{}],"answer":{"result":{"content":[{"type":"text","text":"{\"authenticated\":true,\"account\":{\"type\":\"user\",\"name\":\"Synthetic account\"}}"}],"structuredContent":{"authenticated":true,"account":{"type":"user","name":"Synthetic account"}}},"jsonrpc":"2.0","id":1},"exchanges":[{"request":{"method":"GET","path":"/api/v1/me/","headers":{"authorization":"AccessToken synthetic-token-0123456789","accept":"application/json"},"body":""},"response":{"status":200,"headers":{"content-type":"application/json;charset=utf-8"},"body":"{\"type\":\"user\",\"name\":\"Synthetic account\",\"upstreamOnly\":\"remove-this-unpublished-field\"}"}}]}
+],"code":0,"stderr":""}
+],"requests":1,"store":{"store":"none"},"files":[]}

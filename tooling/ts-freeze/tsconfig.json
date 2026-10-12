@@ -1,0 +1,14 @@
+{
+  "extends": "@family-mcp/tsconfig/base.json",
+  "compilerOptions": {
+    // Bun runs these scripts, and they import TypeScript test files under rust/, which no
+    // package.json marks as modules; "preserve" checks them as the ES modules Bun loads.
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node", "bun"]
+  },
+  "include": ["*.ts", "*.mjs"]
+}

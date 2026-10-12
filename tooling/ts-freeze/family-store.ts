@@ -41,6 +41,7 @@ if (output === undefined) throw new RangeError('Usage: family-store.ts OUTPUT_DI
 
 if (existsSync(output) && readdirSync(output).length)
   throw new RangeError('The output directory must be empty or absent.');
+
 const scratch = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'ts-freeze-family-store-'));
 
 // Explicit-path states keep the store test seam on; the default layouts set their own.
@@ -105,7 +106,13 @@ const read = (path: string) => readFileSync(path, 'utf8');
 const pending = (marker: string, generation: number, nonce: string) =>
   marker.replace('}\n', `,"pending":{"generation":${generation},"nonce":"${nonce}"}}\n`);
 
-const nonceOf = (record: string) => /"nonce":"([^"]+)"/.exec(record)![1]!;
+function nonceOf(record: string): string {
+  const nonce = /"nonce":"([^"]+)"/.exec(record)?.[1];
+
+  if (nonce === undefined) throw new Error('A record without a nonce.');
+
+  return nonce;
+}
 
 function check(outcome: string, expected: string): void {
   if (outcome !== expected) throw new Error(`expected ${expected}, got ${outcome}`);
@@ -375,6 +382,7 @@ try {
 
     // What the package does with this state: read it, then write once more.
     const reader = plant(tree);
+
     const outcome = await inLayout(state.layout, reader, async (options) => {
       const value = await shown(readSecretRecord(options));
       const markerAfterRead = marker(options);
@@ -405,6 +413,7 @@ try {
       typescript: outcome,
     });
   }
+
   writeFileSync(join(output, 'states.json'), `${JSON.stringify(recorded, null, 2)}\n`);
 } finally {
   rmSync(scratch, { recursive: true, force: true });

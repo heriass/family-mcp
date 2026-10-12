@@ -3,10 +3,12 @@
 //! print the same text, exit the same way and leave the terminal mode as they found it, also when
 //! SIGTERM or SIGINT ends them in the middle of the prompt. A terminal that hangs up has no mode
 //! left on Linux, and there each side may meet the hang-up as a failed read or as the input's
-//! end, so that one case checks each side against both outcomes instead (see `typed` and the case
-//! loop).
-//! `FAMILY_MCP_BUN` must name a Bun 1.4.2 executable: this test fails without it and is never
-//! skipped. It needs the `test-origin` feature, without which the binary would talk to Domino’s.
+//! end, so that one case checks each side against both outcomes instead (see `typed` and
+//! `linux_hang_up_outcomes`).
+//! `FAMILY_MCP_BUN` must name a Bun 1.4.2 executable for the live comparison: that test fails
+//! without it and is never skipped. The frozen comparison needs no Bun: it compares this binary
+//! with the TypeScript outcomes frozen per platform in fixtures/pty (PROVENANCE.md there). Both
+//! need the `test-origin` feature, without which the binary would talk to Domino’s.
 #![cfg(feature = "test-origin")]
 
 mod scratch;
@@ -257,12 +259,9 @@ fn typed(command: &mut Command, keys: &[u8], end: End) -> Outcome {
     }
 }
 
-#[test]
-fn the_hidden_prompt_reads_keystrokes_like_the_typescript_cli() {
-    let bun = std::env::var_os("FAMILY_MCP_BUN")
-        .expect("FAMILY_MCP_BUN must name a Bun 1.4.2 executable; parity tests never skip");
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cases: [(&[u8], End); 15] = [
+/// The keystrokes typed and how each case ends.
+fn cases() -> [(&'static [u8], End); 15] {
+    [
         (b"5550123\r123456\r", End::Typed),
         ("\u{feff}5550123\r123456\r".as_bytes(), End::Typed),
         (b"+354 555-0123x\x7f\r123456x\x7f\r", End::Typed),
@@ -278,80 +277,237 @@ fn the_hidden_prompt_reads_keystrokes_like_the_typescript_cli() {
         (b"555", End::Signal("TERM")),
         (b"555", End::Signal("INT")),
         (b"5550123\r12", End::Signal("TERM")),
-    ];
+    ]
+}
 
-    for (keys, end) in cases {
-        let run = |side: &str| {
-            let scratch = scratch::Scratch::new(&format!("prompt-{side}"));
-            let mut command = match side {
-                "ts" => {
-                    let mut command = Command::new(&bun);
-                    command
-                        .arg("--preload")
-                        .arg(manifest.join("tests/ts/rewrite.ts"))
-                        .arg(manifest.join("../../packages/dominos-mcp/src/cli.ts"))
-                        .env("BUN_RUNTIME_TRANSPILER_CACHE_PATH", "0");
-                    command
-                }
-                _ => Command::new(env!("CARGO_BIN_EXE_dominos-mcp")),
-            };
-            command.args(["auth", "login"]);
-            scratch.isolate(&mut command);
-            typed(&mut command, keys, end)
-        };
-        let ts = run("ts");
-
-        // When the controlling side closes, Linux hangs the terminal up. A read already waiting in
-        // the terminal driver fails (EIO), the generic failure; a read that starts after the
-        // hang-up ends the input, which cancels. Which one a prompt meets depends on whether it is
-        // back in its read when the terminal hangs up, which the test cannot see for Bun, so on
-        // Linux each side is checked against both outcomes and not against the other. macOS ends
-        // the input either way, and there the two sides must match.
-        if cfg!(target_os = "linux") && matches!(end, End::HangUp) {
-            let after_prompt = |text: &str| Outcome {
-                code: Some(1),
-                signal: None,
-                stdout: String::new(),
-                stderr: format!("Icelandic phone number (input hidden): {text}"),
-                sent: Vec::new(),
-                restored: None,
-            };
-            let outcomes = [
-                after_prompt("Domino’s MCP failed. Check the local configuration.\n"),
-                after_prompt("Sign-in cancelled.\n"),
-            ];
-            assert!(outcomes.contains(&ts), "{keys:?}: {ts:?}");
-            let rust = run("rust");
-            assert!(outcomes.contains(&rust), "{keys:?}: {rust:?}");
-            continue;
+/// One case on a fresh terminal: the TypeScript CLI under `bun`, or this binary without it.
+fn run(bun: Option<&std::ffi::OsStr>, keys: &[u8], end: End) -> Outcome {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let scratch = scratch::Scratch::new(match bun {
+        Some(_) => "prompt-ts",
+        None => "prompt-rust",
+    });
+    let mut command = match bun {
+        Some(bun) => {
+            let mut command = Command::new(bun);
+            command
+                .arg("--preload")
+                .arg(manifest.join("tests/ts/rewrite.ts"))
+                .arg(manifest.join("../../packages/dominos-mcp/src/cli.ts"))
+                .env("BUN_RUNTIME_TRANSPILER_CACHE_PATH", "0");
+            command
         }
+        None => Command::new(env!("CARGO_BIN_EXE_dominos-mcp")),
+    };
+    command.args(["auth", "login"]);
+    scratch.isolate(&mut command);
+    typed(&mut command, keys, end)
+}
+
+/// The two outcomes a prompt may meet when the terminal hangs up on Linux. When the controlling
+/// side closes, Linux hangs the terminal up. A read already waiting in the terminal driver fails
+/// (EIO), the generic failure; a read that starts after the hang-up ends the input, which cancels.
+/// Which one a prompt meets depends on whether it is back in its read when the terminal hangs up,
+/// which the test cannot see for Bun, so on Linux each side is checked against both outcomes and
+/// not against the other. macOS ends the input either way, and there the two sides must match.
+fn linux_hang_up_outcomes() -> [Outcome; 2] {
+    let after_prompt = |text: &str| Outcome {
+        code: Some(1),
+        signal: None,
+        stdout: String::new(),
+        stderr: format!("Icelandic phone number (input hidden): {text}"),
+        sent: Vec::new(),
+        restored: None,
+    };
+    [
+        after_prompt("Domino’s MCP failed. Check the local configuration.\n"),
+        after_prompt("Sign-in cancelled.\n"),
+    ]
+}
+
+/// The checks every TypeScript run gets; the frozen outcomes passed them when they were frozen.
+fn check_typescript(ts: &Outcome, keys: &[u8], end: End) {
+    if cfg!(target_os = "linux") && matches!(end, End::HangUp) {
+        assert!(linux_hang_up_outcomes().contains(ts), "{keys:?}: {ts:?}");
+    } else {
         assert_eq!(ts.restored, Some(true), "{keys:?}: {ts:?}");
-        let mut rust = run("rust");
-        let interpretation = if keys == b"5550123\r\x1b[A123456\r" {
-            Some("history")
-        } else if keys == b"555013\x1b[D2\r123456\r" {
-            Some("left")
-        } else if keys == b"5550123\r12345x\x1b[D\x04\x056\r" {
-            Some("code-delete")
-        } else if keys.iter().any(|byte| [0x7f, 0x08, 0x15].contains(byte))
-            || keys == b"x5550123\x01\x1b[3~\x05\r123456\r"
-        {
-            Some("phone-edit")
-        } else {
-            None
-        };
-        if let Some(interpretation) = interpretation {
-            check_keystrokes(&rust, &ts, interpretation);
-            continue;
-        }
+    }
+}
 
-        // Bun dies of the signal; the binary keeps its handler installed, so it exits with the
-        // status a shell reports for that death (128 + the signal number).
-        if let (End::Signal(_), Some(signal)) = (end, ts.signal) {
-            assert_eq!(rust.code, Some(128 + signal), "{end:?}: {rust:?}");
-            (rust.code, rust.signal) = (None, Some(signal));
+/// The documented interpretation of a case whose editing keys the Bun reference may ignore.
+fn interpretation(keys: &[u8]) -> Option<&'static str> {
+    if keys == b"5550123\r\x1b[A123456\r" {
+        Some("history")
+    } else if keys == b"555013\x1b[D2\r123456\r" {
+        Some("left")
+    } else if keys == b"5550123\r12345x\x1b[D\x04\x056\r" {
+        Some("code-delete")
+    } else if keys.iter().any(|byte| [0x7f, 0x08, 0x15].contains(byte))
+        || keys == b"x5550123\x01\x1b[3~\x05\r123456\r"
+    {
+        Some("phone-edit")
+    } else {
+        None
+    }
+}
+
+/// Compares this binary's outcome of a case with the TypeScript one, live or frozen.
+fn compare(mut rust: Outcome, ts: &Outcome, keys: &[u8], end: End) {
+    if cfg!(target_os = "linux") && matches!(end, End::HangUp) {
+        assert!(
+            linux_hang_up_outcomes().contains(&rust),
+            "{keys:?}: {rust:?}"
+        );
+        return;
+    }
+    if let Some(interpretation) = interpretation(keys) {
+        check_keystrokes(&rust, ts, interpretation);
+        return;
+    }
+
+    // Bun dies of the signal; the binary keeps its handler installed, so it exits with the
+    // status a shell reports for that death (128 + the signal number).
+    if let (End::Signal(_), Some(signal)) = (end, ts.signal) {
+        assert_eq!(rust.code, Some(128 + signal), "{end:?}: {rust:?}");
+        (rust.code, rust.signal) = (None, Some(signal));
+    }
+    assert_eq!(rust, *ts, "{keys:?} {end:?}");
+}
+
+#[test]
+fn the_hidden_prompt_reads_keystrokes_like_the_typescript_cli() {
+    let bun = std::env::var_os("FAMILY_MCP_BUN")
+        .expect("FAMILY_MCP_BUN must name a Bun 1.4.2 executable; parity tests never skip");
+
+    for (keys, end) in cases() {
+        let ts = run(Some(&bun), keys, end);
+        check_typescript(&ts, keys, end);
+        compare(run(None, keys, end), &ts, keys, end);
+    }
+}
+
+impl End {
+    fn name(self) -> String {
+        match self {
+            End::Typed => "typed".into(),
+            End::HangUp => "hang-up".into(),
+            End::Signal(name) => format!("signal:{name}"),
         }
-        assert_eq!(rust, ts, "{keys:?} {end:?}");
+    }
+}
+
+impl Outcome {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": self.code,
+            "signal": self.signal,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "sent": self.sent,
+            "restored": self.restored,
+        })
+    }
+
+    fn from_json(value: &serde_json::Value) -> Self {
+        let text = |key: &str| value[key].as_str().unwrap().to_owned();
+        let number = |key: &str| {
+            value[key]
+                .as_i64()
+                .map(|number| i32::try_from(number).unwrap())
+        };
+        Self {
+            code: number("code"),
+            signal: number("signal"),
+            stdout: text("stdout"),
+            stderr: text("stderr"),
+            sent: value["sent"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|token| token.as_str().unwrap().to_owned())
+                .collect(),
+            restored: value["restored"].as_bool(),
+        }
+    }
+}
+
+/// The frozen TypeScript outcomes of this platform (fixtures/pty, PROVENANCE.md there).
+fn frozen_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pty")
+        .join(format!("{}.json", std::env::consts::OS))
+}
+
+const FROZEN_ID: &str = "dominos/pty/the-hidden-prompt-reads-keystrokes-like-the-typescript-cli";
+
+/// Writes the TypeScript CLI's outcome of every case on this platform to `DOMINOS_PTY_FREEZE`. Run
+/// once with Bun 1.4.2 at the commit PROVENANCE.md names; PR 3 deletes it with the TypeScript CLI.
+#[test]
+#[ignore = "freezes the TypeScript outcomes; needs FAMILY_MCP_BUN and DOMINOS_PTY_FREEZE"]
+fn freeze_the_typescript_prompt_outcomes() {
+    let bun = std::env::var_os("FAMILY_MCP_BUN").expect("FAMILY_MCP_BUN must name Bun 1.4.2");
+    let output = std::env::var_os("DOMINOS_PTY_FREEZE").expect("DOMINOS_PTY_FREEZE names the file");
+    let cases: Vec<serde_json::Value> = cases()
+        .into_iter()
+        .map(|(keys, end)| {
+            let ts = run(Some(&bun), keys, end);
+            check_typescript(&ts, keys, end);
+            let mut case = serde_json::json!({
+                "keys": String::from_utf8_lossy(keys),
+                "end": end.name(),
+                "outcome": ts.json(),
+            });
+
+            // On Linux a hang-up has two outcomes; the pair is frozen with the one Bun met.
+            if cfg!(target_os = "linux") && matches!(end, End::HangUp) {
+                case["allowed"] = linux_hang_up_outcomes().iter().map(Outcome::json).collect();
+            }
+            case
+        })
+        .collect();
+    let frozen = serde_json::json!({
+        "id": FROZEN_ID,
+        "platform": std::env::consts::OS,
+        "cases": cases,
+    });
+    std::fs::write(
+        output,
+        format!("{}\n", serde_json::to_string_pretty(&frozen).unwrap()),
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_hidden_prompt_reads_keystrokes_like_the_frozen_typescript_cli() {
+    let path = frozen_path();
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "no frozen TypeScript outcomes at {}: {error}",
+            path.display()
+        )
+    });
+    let frozen: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(frozen["id"], FROZEN_ID);
+    assert_eq!(frozen["platform"], std::env::consts::OS);
+    let recorded = frozen["cases"].as_array().unwrap();
+    assert_eq!(recorded.len(), cases().len());
+
+    for ((keys, end), case) in cases().into_iter().zip(recorded) {
+        assert_eq!(case["keys"], *String::from_utf8_lossy(keys), "{keys:?}");
+        assert_eq!(case["end"], end.name(), "{keys:?}");
+        let ts = Outcome::from_json(&case["outcome"]);
+        check_typescript(&ts, keys, end);
+
+        if let Some(allowed) = case.get("allowed") {
+            let allowed: Vec<Outcome> = allowed
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(Outcome::from_json)
+                .collect();
+            assert_eq!(allowed, linux_hang_up_outcomes(), "{keys:?}");
+        }
+        compare(run(None, keys, end), &ts, keys, end);
     }
 }
 

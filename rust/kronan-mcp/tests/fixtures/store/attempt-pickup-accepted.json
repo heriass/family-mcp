@@ -1,0 +1,15 @@
+{
+ "id": "kronan/store/attempt-pickup-accepted",
+ "case": "interop.test.ts:88",
+ "result": {
+  "orderToken": "order-token"
+ },
+ "print": "bde8f4c200ce3b067059ad6f35669acb37de69b3dd92c8c78b0ac04a0b395494",
+ "files": [
+  {
+   "path": ".config/kronan-mcp/session.json.order-attempts.json",
+   "mode": "600",
+   "text": "{\"version\":1,\"attempts\":[{\"id\":\"e651d06b-d301-4148-862f-9da3258f619f\",\"tool\":\"reserve_pickup_slot\",\"checkoutToken\":\"checkout-token\",\"fingerprint\":\"lines\",\"total\":990,\"state\":\"accepted\",\"orderToken\":\"order-token\",\"createdAt\":\"2026-10-11T22:13:09.238Z\",\"updatedAt\":\"2026-10-11T22:13:09.239Z\"}]}\n"
+  }
+ ]
+}

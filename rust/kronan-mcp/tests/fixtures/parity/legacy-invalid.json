@@ -1,0 +1,10 @@
+{"id":"kronan/parity/legacy-invalid","env":{},"steps":[
+{"mode":"ok"},
+{"file":".config/kronan-mcp/session.json","text":"{\"version\":1,\"token\":\"short\"}"},
+{"cli":["auth","migrate"],"code":1,"stdout":"","stderr":"Invalid Krónan token file. Run kronan-mcp auth set again.\n","exchanges":[]},
+{"cli":["auth","status"],"code":1,"stdout":"","stderr":"Invalid Krónan token file. Run kronan-mcp auth set again.\n","exchanges":[]},
+{"file":".config/kronan-mcp/session.json","text":"{\"version\":1,\"token\":\"synthetic-token-0123456789\"}\n","permissions":416},
+{"cli":["auth","migrate"],"code":1,"stdout":"","stderr":"Cannot read the Krónan token file. Use a regular file that you own with owner-only permissions (chmod 600 on Unix), not a symlink or hard link.\n","exchanges":[]},
+{"cli":["auth","logout"],"code":0,"stdout":"Saved Krónan access token removed from this computer. The token itself stays valid until revoked in Krónan settings.\n","stderr":"","exchanges":[]},
+{"cli":["auth","migrate"],"code":1,"stdout":"","stderr":"No saved Krónan access token. Run kronan-mcp auth set first.\n","exchanges":[]}
+],"requests":0,"store":{"store":"none"},"files":[]}

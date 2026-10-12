@@ -1,0 +1,120 @@
+{
+  "id": "kronan/pty/the-hidden-prompt-reads-keystrokes-like-the-typescript-cli",
+  "platform": "macos",
+  "cases": [
+    {
+      "keys": "  synthetic-token-0123456789x\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Krónan access token verified and saved encrypted.\n",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \n",
+        "sent": [
+          "AccessToken synthetic-token-0123456789"
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-token-0123456789\b\b6789\n",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Krónan access token verified and saved encrypted.\n",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \n",
+        "sent": [
+          "AccessToken synthetic-token-012345676789"
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-token-0123456789😀\r",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \nInvalid Krónan access token. Paste the token exactly as Krónan shows it, on one line.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-token-0123456789😀\r",
+      "end": "typed",
+      "outcome": {
+        "code": 0,
+        "signal": null,
+        "stdout": "Krónan access token verified and saved encrypted.\n",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \n",
+        "sent": [
+          "AccessToken synthetic-token-0123456789"
+        ],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-tok\u0003en-0123456789\r",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \nCancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "\u0004",
+      "end": "typed",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \nCancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-token-0123456789",
+      "end": "hang-up",
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: \nCancelled: the terminal input closed.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-tok",
+      "end": "signal:TERM",
+      "outcome": {
+        "code": null,
+        "signal": 15,
+        "stdout": "",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: ",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "keys": "synthetic-tok",
+      "end": "signal:INT",
+      "outcome": {
+        "code": null,
+        "signal": 2,
+        "stdout": "",
+        "stderr": "Paste the Krónan access token (input hidden) and press Enter: ",
+        "sent": [],
+        "restored": true
+      }
+    }
+  ]
+}

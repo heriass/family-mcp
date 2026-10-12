@@ -1,0 +1,15 @@
+{
+ "id": "kronan/store/attempt-complete-accepted",
+ "case": "interop.test.ts:116",
+ "result": {
+  "orderToken": "order-token"
+ },
+ "print": "bde8f4c200ce3b067059ad6f35669acb37de69b3dd92c8c78b0ac04a0b395494",
+ "files": [
+  {
+   "path": ".config/kronan-mcp/session.json.order-attempts.json",
+   "mode": "600",
+   "text": "{\"version\":1,\"attempts\":[{\"id\":\"dba680df-ab3f-485e-8954-85dd0a1c4463\",\"tool\":\"complete_checkout\",\"checkoutToken\":\"123e4567-e89b-12d3-a456-426614174006\",\"fingerprint\":\"bde8f4c200ce3b067059ad6f35669acb37de69b3dd92c8c78b0ac04a0b395494\",\"total\":1489,\"state\":\"accepted\",\"orderToken\":\"order-token\",\"createdAt\":\"2026-10-11T22:13:09.240Z\",\"updatedAt\":\"2026-10-11T22:13:09.241Z\"}]}\n"
+  }
+ ]
+}

@@ -1,0 +1,5 @@
+{"id":"kronan/contract/stdio-missing-token","env":{"KRONAN_TOKEN_FILE":"missing.json"},"steps":[
+{"serve":true,"results":[
+{"call":["auth_status",{}],"answer":{"result":{"content":[{"type":"text","text":"No saved Krónan access token. Run kronan-mcp auth set first."}],"isError":true},"jsonrpc":"2.0","id":1},"exchanges":[]}
+],"code":0,"stderr":""}
+],"requests":0,"store":{"store":"none"},"files":[],"tree":[".config/ 700",".config/kronan-mcp/ 700"]}

@@ -1,0 +1,16 @@
+{
+  "name": "@family-mcp/ts-freeze",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Freezes TypeScript outcomes for the Rust tests; PR 3 deletes it with the TypeScript packages",
+  "type": "module",
+  "scripts": {
+    "lint": "oxlint -c ../../.oxlintrc.json --deny-warnings .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@family-mcp/tsconfig": "workspace:*",
+    "@types/bun": "^1.2.19",
+    "@types/node": "^22.20.2"
+  }
+}

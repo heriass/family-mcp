@@ -1,0 +1,62 @@
+{
+ "id": "dominos/store/quoted",
+ "case": "interop.test.ts:45",
+ "now": 4102444800000,
+ "result": {
+  "quote": {
+   "quoteId": "61079a7b-b5a2-4eba-aa50-0b34516cd827",
+   "total": 2500,
+   "currency": "ISK",
+   "expiresAt": "2100-01-01T00:05:00.000Z",
+   "cart": {
+    "fulfillment": {
+     "type": "pickup",
+     "storeId": "1",
+     "instructions": ""
+    },
+    "pizzas": [
+     {
+      "quantity": 1,
+      "sizeId": "LG",
+      "crustId": "HANDTOSS",
+      "sections": [
+       {
+        "pizzaId": "TEST",
+        "modifications": []
+       }
+      ]
+     }
+    ],
+    "sides": [],
+    "beverages": [],
+    "packages": []
+   }
+  }
+ },
+ "provider": {
+  "orders": 0,
+  "payments": 0
+ },
+ "files": [
+  {
+   "path": "config/dominos-mcp/session.enc",
+   "mode": "600",
+   "hex": "7b2276223a312c22736572766572223a22646f6d696e6f732d6d6370222c2270726f66696c65223a2264656661756c74222c22707572706f7365223a2273657373696f6e222c22736368656d61223a312c2267656e65726174696f6e223a312c226b65794964223a226c6f63616c222c226e6f6e6365223a225f3774735753644f65776c6d47615072227d0a53354f7955657a596a4e77576d724c4866763035684a665834545f5a42794f6e33514b625576336a30426e6343555f624a72574864783049455f42344a6a7162335568624a3253376736646a637776694741364f796d366b354b4672414e422d386a39654d50716f5351316c4c624b6e63324f4975583145543443704733433864444c5f745a4b5a5a4d7a4a2d52746571777a416a707469582d43514833413948305176657558356c5778316275515a42355744564a5866444f6b675a76305758794e4b0a"
+  },
+  {
+   "path": "config/dominos-mcp/session.enc.marker",
+   "mode": "600",
+   "hex": "7b226261636b656e64223a22656e637279707465642d66696c65222c226b6579536f75726365223a226c6f63616c2d66696c65222c226b65794964223a226c6f63616c222c2270726f66696c65223a2264656661756c74222c226d69677261746564223a747275652c2267656e65726174696f6e223a317d0a"
+  },
+  {
+   "path": "data/family-mcp/keys/dominos-mcp.default.key",
+   "mode": "600",
+   "hex": "0fb8230e5b741ac0c14294dde967368353c36cbf4bf48552e71171472c695a36"
+  },
+  {
+   "path": "session.json.checkouts/61079a7b-b5a2-4eba-aa50-0b34516cd827.json",
+   "mode": "600",
+   "text": "{\"id\":\"61079a7b-b5a2-4eba-aa50-0b34516cd827\",\"username\":\"3545550123\",\"cart\":{\"fulfillment\":{\"type\":\"pickup\",\"storeId\":\"1\",\"instructions\":\"\"},\"pizzas\":[{\"quantity\":1,\"sizeId\":\"LG\",\"crustId\":\"HANDTOSS\",\"sections\":[{\"pizzaId\":\"TEST\",\"modifications\":[]}]}],\"sides\":[],\"beverages\":[],\"packages\":[]},\"total\":2500,\"createdAt\":4102444800000,\"expiresAt\":4102445100000}\n"
+  }
+ ]
+}

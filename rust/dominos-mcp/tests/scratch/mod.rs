@@ -2,6 +2,7 @@ use std::fs::{self, DirBuilder};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A private home for one Bun run, removed on drop. The run gets the store test seam and its home,
 /// XDG directories and temporary directory in here, so neither language reaches the real store.
@@ -9,9 +10,13 @@ pub struct Scratch(PathBuf);
 
 impl Scratch {
     pub fn new(name: &str) -> Self {
-        let path = std::env::temp_dir()
-            .join("impl-rust-dominos")
-            .join(format!("dominos-{name}-{}", std::process::id()));
+        // Tests of one process run in parallel; each scratch gets its own number.
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let path = std::env::temp_dir().join("impl-rust-dominos").join(format!(
+            "dominos-{name}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
         DirBuilder::new()
             .mode(0o700)
             .recursive(true)

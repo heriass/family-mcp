@@ -1,0 +1,12 @@
+{"id":"kronan/parity/legacy","env":{},"steps":[
+{"mode":"ok"},
+{"file":".config/kronan-mcp/session.json","text":"{\"version\":1,\"token\":\"synthetic-token-0123456789\"}\n"},
+{"cli":["auth","status"],"code":0,"stdout":"Saved in a plaintext file. Run kronan-mcp auth migrate.\n{\"authenticated\":true,\"account\":{\"type\":\"user\",\"name\":\"Synthetic account\"}}\n","stderr":"","exchanges":[{"request":{"method":"GET","path":"/api/v1/me/","headers":{"authorization":"AccessToken synthetic-token-0123456789","accept":"application/json"},"body":""},"response":{"status":200,"headers":{"content-type":"application/json;charset=utf-8"},"body":"{\"type\":\"user\",\"name\":\"Synthetic account\",\"upstreamOnly\":\"remove-this-unpublished-field\"}"}}]},
+{"cli":["auth","migrate"],"code":0,"stdout":"Krónan access token moved to the encrypted store; the plaintext file was removed.\n","stderr":"","exchanges":[]},
+{"cli":["auth","status"],"code":0,"stdout":"Saved in an encrypted file.\n{\"authenticated\":true,\"account\":{\"type\":\"user\",\"name\":\"Synthetic account\"}}\n","stderr":"","exchanges":[{"request":{"method":"GET","path":"/api/v1/me/","headers":{"authorization":"AccessToken synthetic-token-0123456789","accept":"application/json"},"body":""},"response":{"status":200,"headers":{"content-type":"application/json;charset=utf-8"},"body":"{\"type\":\"user\",\"name\":\"Synthetic account\",\"upstreamOnly\":\"remove-this-unpublished-field\"}"}}]},
+{"file":".config/kronan-mcp/session.json","text":"{\"version\":1,\"token\":\"short\"}"},
+{"cli":["auth","migrate"],"code":0,"stdout":"Already migrated. Removed a leftover plaintext token file.\n","stderr":"","exchanges":[]},
+{"cli":["auth","logout"],"code":0,"stdout":"Saved Krónan access token removed from this computer. The token itself stays valid until revoked in Krónan settings.\n","stderr":"","exchanges":[]},
+{"file":".config/kronan-mcp/session.json","text":"{\"version\":1,\"token\":\"synthetic-token-0123456789\"}\n"},
+{"cli":["auth","migrate"],"code":0,"stdout":"Already migrated. Removed a leftover plaintext token file.\n","stderr":"","exchanges":[]}
+],"requests":2,"store":{"record":"{\"version\":1,\"token\":null}"},"files":["session.enc","session.enc.marker"]}
