@@ -31,6 +31,18 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
   const fetcher = async (url: URL, init: RequestInit): Promise<Response> => {
     const method = init.method ?? 'GET';
     requests.push(`${method} ${url.pathname}`);
+    const loginHeaders = new Headers(init.headers);
+    // All eight login exchanges, including redirect hops, use browser headers. Verification
+    // and the subsequent parent/appData read retain the original API request headers.
+    if (requests.length <= 8) {
+      assert.equal(loginHeaders.get('user-agent'), 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36');
+      assert.equal(loginHeaders.get('accept'), 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+      assert.equal(loginHeaders.get('accept-language'), 'is-IS,is;q=0.9,en;q=0.8');
+    } else {
+      assert.equal(loginHeaders.get('user-agent'), 'Bun/1.4.2');
+      assert.equal(loginHeaders.get('accept'), 'application/json, text/html;q=0.9');
+      assert.equal(loginHeaders.get('accept-language'), null);
+    }
 
     if (url.pathname === '/' && method === 'GET' && !signedIn)
       return new Response(null, { status: 302, headers: {
