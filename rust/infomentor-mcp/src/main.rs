@@ -1,5 +1,6 @@
 //! infomentor-mcp: the command line of packages/infomentor-mcp/src/cli.ts.
 
+mod assessment;
 mod client;
 mod collection;
 mod error;
