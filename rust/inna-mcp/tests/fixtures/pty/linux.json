@@ -1,0 +1,209 @@
+{
+  "id": "inna/pty/the-hidden-phone-prompt-reads-keystrokes-like-the-typescript-cli",
+  "platform": "linux",
+  "cases": [
+    {
+      "case": {
+        "keys": " 5550000 \r",
+        "signals": [],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nInna electronic-ID login failed or expired. Check your phone and start a fresh explicit login.\n",
+        "sent": [
+          "GET /r.inna.is/auth/island HTTP/1.1"
+        ],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "55x50000\n",
+        "signals": [],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nInna electronic-ID login failed or expired. Check your phone and start a fresh explicit login.\n",
+        "sent": [
+          "GET /r.inna.is/auth/island HTTP/1.1"
+        ],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "5\u0004550000\r",
+        "signals": [],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nInna electronic-ID login failed or expired. Check your phone and start a fresh explicit login.\n",
+        "sent": [
+          "GET /r.inna.is/auth/island HTTP/1.1"
+        ],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "5\u0004",
+        "signals": [],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nInna login cancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "555\u0003",
+        "signals": [],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nInna login cancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "123\r5550000\r",
+        "signals": [],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nEnter a seven-digit Icelandic phone number.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "5550000",
+        "signals": [],
+        "after": "",
+        "hangUp": true
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): Inna MCP failed. Check input format, file permissions, and local configuration.\n",
+        "sent": [],
+        "restored": null
+      },
+      "allowed": [
+        {
+          "code": 1,
+          "signal": null,
+          "stdout": "",
+          "stderr": "Icelandic phone number (input hidden): Inna MCP failed. Check input format, file permissions, and local configuration.\n",
+          "sent": [],
+          "restored": null
+        },
+        {
+          "code": 1,
+          "signal": null,
+          "stdout": "",
+          "stderr": "Icelandic phone number (input hidden): \nInna login cancelled.\n",
+          "sent": [],
+          "restored": null
+        }
+      ]
+    },
+    {
+      "case": {
+        "keys": "555",
+        "signals": [
+          "TERM"
+        ],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": null,
+        "signal": 15,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): ",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "555",
+        "signals": [
+          "INT"
+        ],
+        "after": "0000\r",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): \nInna login cancelled.\n",
+        "sent": [],
+        "restored": true
+      }
+    },
+    {
+      "case": {
+        "keys": "555",
+        "signals": [
+          "INT",
+          "INT"
+        ],
+        "after": "",
+        "hangUp": false
+      },
+      "outcome": {
+        "code": null,
+        "signal": 2,
+        "stdout": "",
+        "stderr": "Icelandic phone number (input hidden): ",
+        "sent": [],
+        "restored": false
+      }
+    }
+  ],
+  "order": {
+    "id": "inna/pty/a-key-typed-as-the-prompt-shows-is-read-raw-and-not-echoed",
+    "outcome": {
+      "code": 1,
+      "stdout": "",
+      "stderr": "Icelandic phone number (input hidden): \nInna electronic-ID login failed or expired. Check your phone and start a fresh explicit login.\n",
+      "sent": [
+        "GET /r.inna.is/auth/island HTTP/1.1"
+      ],
+      "restored": true
+    }
+  }
+}

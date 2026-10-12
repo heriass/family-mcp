@@ -1,0 +1,23 @@
+{"steps":[
+{"file":"browser","text":"#!/bin/sh\nexit 1\n","permissions":493},
+{"cli":["--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["serve","--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","status","--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","logout","--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","import","<home>/cookies.json","--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","extra","--google"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--timeout","5"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--browser","<home>/browser"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--timeout","5","--browser","<home>/browser"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","status","--timeout","5"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["serve","--browser","<home>/browser"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["--timeout","5"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--no-keep-alive"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--allow-absence-writes"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--timeout=0"],"code":1,"stdout":"","stderr":"Provide a positive whole number for --timeout.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--timeout=-1"],"code":1,"stdout":"","stderr":"Provide a positive whole number for --timeout.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--timeout=1.5"],"code":1,"stdout":"","stderr":"Provide a positive whole number for --timeout.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--timeout=soon"],"code":1,"stdout":"","stderr":"Provide a positive whole number for --timeout.\n","exchanges":[],"journal":{}},
+{"cli":["auth","login","--google","--browser","<home>/browser","--timeout="],"code":1,"stdout":"","stderr":"Provide a positive whole number for --timeout.\n","exchanges":[],"journal":{}}
+],"id":"inna/contract/browser-options-only-with-google-login","env":{"INNA_SESSION_FILE":"<home>/session.json","INNA_BROWSER":"<home>/no-browser-selected","DISPLAY":":0"},"requests":0,"files":[".config/ 700",".config/inna-mcp/ 700","browser 755"],"store":"none"}

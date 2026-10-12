@@ -1,0 +1,6 @@
+{"steps":[
+{"file":".config/inna-mcp/session.enc","text":"x"},
+{"directory":".config/inna-mcp","permissions":493},
+{"cli":["serve"],"code":1,"stdout":"","stderr":"inna-mcp: cannot start. Other users can open this store folder.\n  Path: '<home>/.config/inna-mcp'\n  Fix:  chmod 700 '<home>/.config/inna-mcp'\n","exchanges":[],"journal":{}},
+{"cli":["auth","login"],"code":1,"stdout":"","stderr":"inna-mcp: cannot start. Other users can open this store folder.\n  Path: '<home>/.config/inna-mcp'\n  Fix:  chmod 700 '<home>/.config/inna-mcp'\n","exchanges":[],"journal":{}}
+],"id":"inna/parity/store-folder-open","requests":0,"files":[".config/ 700",".config/inna-mcp/ 755",".config/inna-mcp/session.enc 600"],"error":"UNSAFE_FILE"}

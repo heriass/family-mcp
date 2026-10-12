@@ -1,0 +1,5 @@
+{"steps":[
+{"cli":["auth","status"],"code":1,"stdout":"","stderr":"INNA_SESSION_FILE must be an absolute path.\n","exchanges":[],"journal":{}},
+{"cli":["auth","import","<home>/cookies.json"],"code":1,"stdout":"","stderr":"INNA_SESSION_FILE must be an absolute path.\n","exchanges":[],"journal":{}},
+{"cli":["auth","logout"],"code":1,"stdout":"","stderr":"INNA_SESSION_FILE must be an absolute path.\n","exchanges":[],"journal":{}}
+],"id":"inna/parity/session-relative-path","env":{"INNA_SESSION_FILE":"legacy/session.json"},"requests":0,"files":[],"store":"none"}

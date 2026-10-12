@@ -1,0 +1,4 @@
+{"steps":[
+{"cli":["auth","status","--no-keep-alive"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}},
+{"cli":["auth","logout","--no-keep-alive"],"code":1,"stdout":"","stderr":"Invalid command. Run inna-mcp --help.\n","exchanges":[],"journal":{}}
+],"id":"inna/contract/keep-alive-opt-out-flag","env":{"INNA_SESSION_FILE":"<home>/session.json"},"requests":0,"files":[],"store":"none"}

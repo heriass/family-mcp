@@ -1,0 +1,3 @@
+{"steps":[
+{"serve":true,"results":[{"call":["inna_prepare_absence",{}],"answer":"{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Tool inna_prepare_absence not found\"}}","exchanges":[]},{"call":["inna_submit_absence",{}],"answer":"{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"Tool inna_submit_absence not found\"}}","exchanges":[]},{"call":["nope",{}],"answer":"{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32602,\"message\":\"Tool nope not found\"}}","exchanges":[]}],"code":0,"stderr":"","journal":{}}
+],"id":"inna/parity/write-tools-hidden","requests":0,"files":[],"store":"none"}
