@@ -14,7 +14,7 @@ use crate::http::Http;
 use crate::jar::Jar;
 use crate::js;
 use crate::session::{
-    LOGIN_URL, SavedSession, capture, origin, read_session, session_path, trusted_url,
+    LOGIN_URL, PARENT_URL, SavedSession, capture, origin, read_session, session_path, trusted_url,
 };
 use crate::signal::Signal;
 use crate::store::{
@@ -111,9 +111,34 @@ fn login_origin() -> String {
         .unwrap_or_default()
 }
 
-/// `authenticate`: one credential submission, then the observed hidden-form relay.
+/// `authenticate`: establish the OAuth handoff, submit credentials once, then relay the result.
 pub fn authenticate(http: &mut Http, credentials: Credentials, signal: &Signal) -> Result<()> {
-    let page = http.request(LOGIN_URL, None, signal, LOGIN_URL)?;
+    // The parent entry point establishes the OAuth transaction before Mentor can accept a
+    // password. Http follows the login redirect while retaining and validating every cookie.
+    let entry = http.request(PARENT_URL, None, signal, PARENT_URL)?;
+    let handoff = html::parse_forms(&entry.text)
+        .into_iter()
+        .find(|form| form.id == "openid_message")
+        .ok_or(Fail::new(
+            Code::UnexpectedPage,
+            "InfoMentor returned an unsupported authentication handoff.",
+        ))?;
+    let destination = trusted_join(&entry.url, &handoff.action)?;
+    if handoff.method != "post"
+        || !handoff.has("oauth_token")
+        || destination.as_str() != "https://im1.infomentor.is/Production/Mentor/"
+    {
+        return Err(Fail::new(
+            Code::UnexpectedPage,
+            "InfoMentor returned an unsupported authentication handoff.",
+        ));
+    }
+    let page = http.request(
+        destination.as_str(),
+        Some(&handoff.fields),
+        signal,
+        entry.url.as_str(),
+    )?;
     let form = html::parse_forms(&page.text)
         .into_iter()
         .find(|form| form.has("__VIEWSTATE") && form.has("__EVENTVALIDATION"));

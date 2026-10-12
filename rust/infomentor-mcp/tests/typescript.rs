@@ -61,7 +61,7 @@ fn the_integration_cases_pass_against_this_binary() {
 
 #[test]
 fn the_loopback_case_passes_against_this_binary() {
-    bun_test("loopback.test.ts", 1);
+    bun_test("loopback.test.ts", 2);
 }
 
 #[test]

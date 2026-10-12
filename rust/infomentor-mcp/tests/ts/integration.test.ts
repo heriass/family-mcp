@@ -152,6 +152,19 @@ function fixture() {
     requests.push({ url: input.href, method, body, cookies });
     assert.equal(init?.redirect, 'manual');
 
+    // Rust starts a fresh OAuth transaction before requesting the password form.
+    if (input.href === PARENT_URL && method === 'GET' && !cookies.includes('IMHome='))
+      return new Response(null, { status: 302, headers: {
+        Location: PARENT_URL + 'Authentication/Authentication/Login',
+      } });
+    if (input.pathname === '/Authentication/Authentication/Login')
+      return new Response(relayHtml.replace('synthetic&amp;token', 'bootstrap&amp;token'));
+    if (input.pathname === '/Production/Mentor/' &&
+        new URLSearchParams(body).get('oauth_token') === 'bootstrap&token')
+      return new Response(loginHtml.replace('action="./"', 'action="/production/mentor/"'), {
+        headers: { 'Set-Cookie': 'preflight=synthetic; Secure; HttpOnly; Path=/' },
+      });
+
     if (input.href === LOGIN_URL && method === 'GET')
       return new Response(loginHtml, {
         headers: { 'Set-Cookie': 'preflight=synthetic; Secure; HttpOnly; Path=/' },

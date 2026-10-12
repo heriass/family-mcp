@@ -1,0 +1,60 @@
+name: InfoMentor OAuth fix Linux release
+on:
+  push:
+    branches: [fix-infomentor-oauth]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux-x64:
+    if: github.repository == 'heriass/family-mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Format changed test fixtures
+        run: bunx oxfmt -c .oxfmtrc.json --write rust/infomentor-mcp/tests/ts/{integration.test.ts,loopback.test.ts,parity.ts}
+      - name: Install pinned Rust and musl
+        working-directory: rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          rustup toolchain install
+      - name: Check and test InfoMentor
+        working-directory: rust
+        run: |
+          cargo fmt --check
+          cargo clippy -p infomentor-mcp --all-targets --all-features --locked -- -D warnings
+          FAMILY_MCP_BUN="$(command -v bun)" cargo test -p infomentor-mcp --all-features --locked --no-fail-fast
+      - name: Verify package pins and build upstream archive format
+        working-directory: packages/infomentor-mcp
+        run: |
+          bun run release:check
+          bun run build:binary
+          bun run test:binary
+          bun run test:installer
+          cd release
+          sha256sum -c infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256
+          tar -tzf infomentor-mcp-0.9.1-linux-x64.tar.gz
+          file native/infomentor-mcp
+      - name: Publish verified fork release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          Fix for olafurns7/family-mcp#26, based on infomentor-mcp 0.9.1.
+
+          Authentication starts at minn.infomentor.is, follows the login redirect, and submits the openid_message OAuth handoff to Mentor before reading and submitting the password form. The subsequent authentication flow is unchanged.
+
+          Linux x64 static musl binary, packaged with the upstream build script and original archive layout, bundled notices, helpers, and SHA-256 sidecar. The executable reports version 0.9.1.
+
+          Verification: Rust formatting, Clippy, InfoMentor unit/integration/parity tests (including browser-style OAuth regression and invalid handoff refusal), native MCP smoke test, installer checks, and archive checksum verification. Live account login was not tested.
+          EOF
+          gh release create 'infomentor-mcp@0.9.1-oauth-fix' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — OAuth login fix (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"

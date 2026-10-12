@@ -207,6 +207,10 @@ async function handle(request: Request): Promise<Response> {
   const fields = new URLSearchParams(body);
 
   if (host === 'im1.infomentor.is') {
+    if (path === '/Production/Mentor/' && fields.get('oauth_token') === 'bootstrap&token')
+      return new Response(loginHtml(state).replace('action="./"', 'action="/production/mentor/"'), {
+        headers: { 'Set-Cookie': 'preflight=synthetic; Secure; HttpOnly; Path=/' },
+      });
     if (path === '/production/mentor/' && request.method === 'GET')
       return new Response(loginHtml(state), {
         headers: { 'Set-Cookie': 'preflight=synthetic; Secure; HttpOnly; Path=/' },
@@ -252,7 +256,7 @@ async function handle(request: Request): Promise<Response> {
       return new Response(relayHtml(state));
     }
 
-    return new Response('<form method="post"><input type="hidden" name="a" value="b"></form>');
+    return new Response('<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input name="oauth_token" value="bootstrap&amp;token"></form>');
   }
 
   if (path === '/Authentication/Authentication/LoginCallback')
@@ -1358,6 +1362,27 @@ async function run(side: 'ts' | 'rust', scenario: Scenario) {
   }
 
   if (side === 'ts') requests += fake.seen.length;
+
+  // The Rust fix intentionally adds the browser-style OAuth prefix. Its full exchange is
+  // asserted in loopback.test.ts; compare the remaining legacy flow here without that prefix.
+  if (side === 'rust') {
+    for (let i = 0; i < fake.seen.length; i++) {
+      if (new URLSearchParams(fake.seen[i]?.body).get('oauth_token') !== 'bootstrap&token') continue;
+      const first = fake.seen[i - 2];
+      const redirected = fake.seen[i - 1];
+      if (!first || first.method !== 'GET' || first.url !== PARENT ||
+          redirected?.method !== 'GET' ||
+          redirected.url.toLowerCase() !== PARENT + 'authentication/authentication/login')
+        throw new Error('Unexpected OAuth bootstrap sequence');
+      const legacy = { ...first, url: 'https://im1.infomentor.is/production/mentor/',
+        headers: { ...first.headers, referer: 'https://im1.infomentor.is/production/mentor/' } };
+      fake.seen.splice(i - 2, 3, legacy);
+      i -= 2;
+      const password = fake.seen[i + 1];
+      if (password?.url === 'https://im1.infomentor.is/production/mentor/')
+        password.headers.referer = 'https://im1.infomentor.is/production/mentor/';
+    }
+  }
 
   // Each side's home appears in setup messages that name a credentials file.
   const homeless = JSON.parse(

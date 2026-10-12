@@ -15,6 +15,7 @@ const store = useScratchStore();
 
 test('real loopback HTTP covers login redirects, cookies, rate limits, and body caps', async () => {
   const requests: string[] = [];
+  let signedIn = false;
 
   const parent = {
     account: {
@@ -31,16 +32,36 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
     const method = init.method ?? 'GET';
     requests.push(`${method} ${url.pathname}`);
 
-    if (url.pathname === '/production/mentor/' && method === 'GET')
+    if (url.pathname === '/' && method === 'GET' && !signedIn)
+      return new Response(null, { status: 302, headers: {
+        Location: 'https://minn.infomentor.is/Authentication/Authentication/Login',
+        'Set-Cookie': 'transaction=ok; Path=/; Secure; HttpOnly',
+      } });
+
+    if (url.pathname === '/Authentication/Authentication/Login') {
+      assert.match(new Headers(init.headers).get('cookie') ?? '', /transaction=ok/);
+      return new Response('<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input name="oauth_token" value="bootstrap&amp;token"></form>');
+    }
+
+    if (url.pathname === '/Production/Mentor/' && method === 'POST') {
+      const fields = new URLSearchParams(String(init.body ?? ''));
+      assert.equal(fields.get('oauth_token'), 'bootstrap&token');
+      assert.equal(fields.has('login_ascx$txtLykilord'), false);
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get('origin'), 'https://minn.infomentor.is');
+      assert.equal(headers.get('referer'), 'https://minn.infomentor.is/Authentication/Authentication/Login');
+      assert.equal(headers.get('cookie') ?? '', '');
       return new Response(
-        '<form method="POST" action="./"><input type="hidden" name="__VIEWSTATE" value="state"><input type="hidden" name="__EVENTVALIDATION" value="validation"></form>',
+        '<form method="POST" action="/production/mentor/"><input type="hidden" name="__VIEWSTATE" value="state"><input type="hidden" name="__EVENTVALIDATION" value="validation"></form>',
         { headers: { 'Set-Cookie': 'preflight=ok; Path=/; Secure; HttpOnly' } },
       );
+    }
 
     if (url.pathname === '/production/mentor/' && method === 'POST') {
       const body = String(init.body ?? '');
 
-      if (body.includes('oauth_token'))
+      if (body.includes('oauth_token')) {
+        signedIn = true;
         return new Response(null, {
           status: 303,
           headers: {
@@ -48,6 +69,13 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
             'Set-Cookie': 'relay=ok; Path=/; Secure; HttpOnly',
           },
         });
+      }
+
+      const fields = new URLSearchParams(body);
+      assert.equal(fields.get('__VIEWSTATE'), 'state');
+      assert.equal(fields.get('__EVENTVALIDATION'), 'validation');
+      assert.equal(fields.get('login_ascx$txtLykilord'), 'synthetic-password');
+      assert.match(new Headers(init.headers).get('cookie') ?? '', /preflight=ok/);
 
       return new Response(null, {
         status: 302,
@@ -97,8 +125,10 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
     // Rust: parseForms, the rate-limit and the body-cap requests call InfoMentorHttp, which is
     // internal to the binary: html.rs's unit tests parse forms, and parity.ts's parent-429,
     // parent-429-date and parent-large scenarios compare the binary's answers with TypeScript's.
-    assert.deepEqual(requests.slice(0, 8), [
-      'GET /production/mentor/',
+    assert.deepEqual(requests.slice(0, 10), [
+      'GET /',
+      'GET /Authentication/Authentication/Login',
+      'POST /Production/Mentor/',
       'POST /production/mentor/',
       'GET /authentication/authentication/login',
       'POST /production/mentor/',
@@ -108,6 +138,33 @@ test('real loopback HTTP covers login redirects, cookies, rate limits, and body 
       'GET /',
     ]);
     assert.equal(LOGIN_URL, 'https://im1.infomentor.is/production/mentor/');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('invalid initial handoffs stop before any credentials are submitted', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'infomentor-handoff-'));
+  const credentialsFile = join(directory, 'credentials.json');
+  await writeFile(credentialsFile, JSON.stringify({ username: 'synthetic-user', password: 'synthetic-password' }), { mode: 0o600 });
+  try {
+    for (const handoff of [
+      '<form method="post"><input name="oauth_token" value="token"></form>',
+      '<form id="openid_message" method="get" action="https://im1.infomentor.is/Production/Mentor/"><input name="oauth_token" value="token"></form>',
+      '<form id="openid_message" method="post" action="https://im1.infomentor.is/Production/Mentor/"><input name="other" value="token"></form>',
+      '<form id="openid_message" method="post" action="https://minn.infomentor.is/Production/Mentor/"><input name="oauth_token" value="token"></form>',
+      '<form id="openid_message" method="post" action="https://im1.infomentor.is/wrong/"><input name="oauth_token" value="token"></form>',
+    ]) {
+      const requests: string[] = [];
+      await assert.rejects(login({ sessionFile: join(directory, 'session.json'), credentialsFile,
+        fetch: async (url, init) => {
+          requests.push(`${init.method ?? 'GET'} ${url.href}`);
+          assert.equal(init.body == null, true);
+          return new Response(handoff);
+        },
+      }), /unsupported authentication handoff/);
+      assert.deepEqual(requests, ['GET https://minn.infomentor.is/']);
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
