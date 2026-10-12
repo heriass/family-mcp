@@ -1,5 +1,32 @@
 # abler-mcp
 
+## Fork: read-only schema discovery
+
+The Rust binary in `heriass/family-mcp`, release `abler-mcp@0.7.2-heriass1`,
+adds ONE tool on top of upstream `abler-mcp@0.7.2`:
+
+| Tool | Parameters | Result |
+| --- | --- | --- |
+| `describe_api` | Optional `filter` (case-insensitive field-name substring), `max_chars` (default 60000, 1000–200000) | Query/Mutation field names, descriptions, typed arguments and return types; recursively used mutation input objects and enum values. |
+
+It reuses the authenticated session, GraphQL endpoint, cookie rotation and
+existing single-refresh behavior. Disabled introspection returns
+`introspection:false`, sanitized errors, and available server suggestions.
+Validation probes contain a reserved invalid field and `@skip(if:true)` on
+candidate mutations, preventing candidate resolvers from running; see the
+[GraphQL validation rule](https://spec.graphql.org/October2021/#sec-Validating-Requests).
+No write tools are added. Suggestions are metadata, not permission to execute
+writes or evidence of a complete mutation inventory.
+
+Results exclude cookie/token values, headers, input default values and personal
+records. Private diagnostics are omitted. Large output retains whole JSON
+records with `truncated:true` and a note; use a narrower filter or larger cap.
+The eight existing tools are unchanged.
+
+Assets retain upstream x64 Linux names and layout:
+`abler-mcp-0.7.2-linux-x64.tar.gz`, its `.sha256` sidecar, and
+`abler-mcp/bin/abler-mcp` inside the archive. The binary reports `0.7.2`.
+
 Unofficial, read-only [Abler](https://www.abler.io) schedules and messages MCP server. The release is a single native executable compiled from Rust; it needs no Node, npm, or Bun at runtime. The running MCP server uses HTTP and needs no browser.
 
 For agent setup and reporting rules, read **[docs/AGENTS.md](docs/AGENTS.md)**.
