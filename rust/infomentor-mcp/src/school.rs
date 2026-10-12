@@ -147,13 +147,12 @@ fn iso_date(text: &str) -> Option<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if let Some(date) = words.first() {
         let parts: Vec<&str> = date.split('.').collect();
-        if let [day, month, year] = parts.as_slice() {
-            if day.len() == 2 && month.len() == 2 && year.len() == 4 {
+        if let [day, month, year] = parts.as_slice()
+            && day.len() == 2 && month.len() == 2 && year.len() == 4 {
                 let time = words.get(1).copied().unwrap_or("00:00");
                 let time = if time.len() == 5 { format!("{time}:00") } else { time.to_owned() };
                 let candidate = format!("{year}-{month}-{day}T{time}Z");
                 return js::iso_datetime(&candidate).map(js::iso_string);
-            }
         }
     }
     if text.len() == 16 || text.len() == 19 {
@@ -164,7 +163,7 @@ fn iso_date(text: &str) -> Option<String> {
         let offset_at = text.len() - 6;
         if let (Some(base), Some(offset)) = (text.get(..offset_at), text.get(offset_at..)) {
             let bytes = offset.as_bytes();
-            if [b'+', b'-'].contains(&bytes[0]) && bytes[3] == b':' {
+            if b"+-".contains(&bytes[0]) && bytes[3] == b':' {
                 let hour = offset[1..3].parse::<u32>().ok()?;
                 let minute = offset[4..6].parse::<u32>().ok()?;
                 if hour > 23 || minute > 59 { return None; }
