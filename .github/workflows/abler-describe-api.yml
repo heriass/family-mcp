@@ -1,0 +1,66 @@
+name: Abler read-only API discovery Linux release
+on:
+  push:
+    branches: [abler-describe-api]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux-x64:
+    if: github.repository == 'heriass/family-mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Format changed test fixtures
+        run: bunx oxfmt -c .oxfmtrc.json --write rust/abler-mcp/tests/ts/{describe.test.ts,integration.test.ts,parity.ts}
+      - name: Install pinned Rust and musl
+        working-directory: rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          rustup toolchain install
+      - name: Check and test Abler
+        working-directory: rust
+        run: |
+          cargo fmt --package abler-mcp
+          cargo fmt --check
+          cargo clippy -p abler-mcp --all-targets --all-features --locked -- -D warnings
+          FAMILY_MCP_BUN="$(command -v bun)" cargo test -p abler-mcp --all-features --locked --no-fail-fast
+      - name: Build and verify upstream archive layout
+        working-directory: packages/abler-mcp
+        run: |
+          bun run release:check
+          bun run build:binary
+          bun run test:binary
+          bun run test:installer
+          cd release
+          sha256sum -c abler-mcp-0.7.2-linux-x64.tar.gz.sha256
+          tar -tzf abler-mcp-0.7.2-linux-x64.tar.gz
+          tar -tzf abler-mcp-0.7.2-linux-x64.tar.gz | grep -Fx 'abler-mcp/bin/abler-mcp'
+          file native/abler-mcp
+      - name: Publish verified fork release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          Phase 1: read-only GraphQL schema discovery, based exactly on upstream abler-mcp@0.7.2 (7863b9f20952f0d18625a0e99e88538cd871a2e7).
+
+          Adds ONE tool, describe_api({filter?, max_chars?}), returning Query/Mutation fields with descriptions, typed arguments and return types, recursively referenced mutation input objects and enums. Default cap is 60000 characters; filtering is case-insensitive. Truncation preserves complete JSON records with a note.
+
+          Reuses the existing authenticated GraphQL transport, /graphql, cookie rotation and existing one-refresh UNAUTHENTICATED handling. Every pre-existing tool remains unchanged. No login logic or write tools were added.
+
+          When introspection returns GraphQL errors, returns introspection:false with sanitized errors and tries mutation __typename plus three controlled validation probes for server suggestions. Each candidate is guarded by @skip(if:true) and a reserved invalid __ field, preventing mutation resolvers from running. Suggestions are not a complete inventory or permission to execute mutations. Cookie/token values, headers, input default values and personal records are never returned; private diagnostics are omitted.
+
+          Verification: formatting, Clippy, unit tests, schema-discovery integration (nested types/input cycles/enums/filtering/truncation/disabled fallback/read-only probes/cookie rotation/existing refresh), full original-tool parity and browser/integration/startup/stdio tests, native MCP smoke, installer tests and archive SHA-256 verification. Live Abler schema discovery was not tested.
+
+          Linux x64 assets retain EXACT upstream 0.7.2 names and archive layout: abler-mcp-0.7.2-linux-x64.tar.gz and .sha256, executable at abler-mcp/bin/abler-mcp. The binary reports version 0.7.2.
+          EOF
+          gh release create 'abler-mcp@0.7.2-heriass1' packages/abler-mcp/release/abler-mcp-0.7.2-linux-x64.tar.gz packages/abler-mcp/release/abler-mcp-0.7.2-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'abler-mcp 0.7.2 — Read-only API discovery (heriass1, linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
