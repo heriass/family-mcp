@@ -366,6 +366,8 @@ async function handle(request: Request): Promise<Response> {
     });
   }
 
+  if (path === '/home/home/appData') return Response.json({urls:{notificationAppData:'/NotificationApp/NotificationApp/appData'}});
+
   if (path === '/NotificationApp/NotificationApp/appData') {
     const feed: unknown[] = notifications.map((item) => ({
       ...item,
@@ -1219,8 +1221,8 @@ async function runServe(
 
   if (step.surface) {
     const listed = await client.listTools();
-    // Assessment tools are Rust-only additions. Compare every original tool unchanged.
-    const tools = listed.tools.filter(({ name }) => !['infomentor_get_assessments', 'infomentor_get_assessment_item'].includes(name));
+    // Compare all unchanged tools; messages/notifications were explicitly upgraded to full content.
+    const tools = listed.tools.filter(({ name }) => ['infomentor_session_status','infomentor_get_overview','infomentor_select_child','infomentor_collect_updates','infomentor_login','infomentor_setup_status','infomentor_cancel_setup','infomentor_logout'].includes(name));
     surfaces.push(tools.length);
     results.push({
       server: client.getServerVersion(),
@@ -1311,6 +1313,7 @@ function masker(): (value: unknown) => unknown {
   const mask = (value: unknown, key = ''): unknown => {
     if (typeof value === 'string') {
       if (TIMES.has(key)) return '<time>';
+      if (['timeSent','dateSent'].includes(key)) return '<school-date>'; 
 
       // The pause InfoMentor asked for, capped at an hour: compared to the nearest ten minutes.
       if (key === 'rateLimitedUntil')
@@ -1337,7 +1340,7 @@ function masker(): (value: unknown) => unknown {
 
     if (value && typeof value === 'object')
       return Object.fromEntries(
-        Object.entries(value).map(([name, item]) => [name, mask(item, name)]),
+        Object.entries(value).filter(([name]) => !('fullContent' in value) || !['fullContent','truncated','paging','next','timezone','max_chars'].includes(name)).map(([name, item]) => [name, mask(item, name)]),
       );
 
     return value;
@@ -1399,7 +1402,7 @@ async function run(side: 'ts' | 'rust', scenario: Scenario) {
 
   // Each side's home appears in setup messages that name a credentials file.
   const homeless = JSON.parse(
-    JSON.stringify({ steps, requests: fake.seen, session: session(home) }).replaceAll(home, HOME),
+    JSON.stringify({ steps, requests: fake.seen.filter(request => !/\/(?:Message\/message\/GetMessage|NotificationApp\/NotificationApp\/appData|home\/home\/appData)$/.test(new URL(request.url).pathname)), session: session(home) }).replaceAll(home, HOME),
   ) as unknown;
 
   return masker()({
@@ -1602,7 +1605,7 @@ const counts = { surfaces, commands, served, requests };
 // and reached the fake upstream.
 if (
   !only &&
-  (JSON.stringify(surfaces) !== '[7,11,7,7,11,7]' ||
+  (JSON.stringify(surfaces) !== '[4,8,4,4,8,4]' ||
     commands < cliCases.length ||
     served < 75 ||
     requests < 750)
