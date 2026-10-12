@@ -2,12 +2,28 @@
 
 ## Fork: read-only schema discovery
 
-The Rust binary in `heriass/family-mcp`, [heriass1 release](https://github.com/heriass/family-mcp/releases/tag/abler-mcp%400.7.2-heriass1),
+The Rust binary in `heriass/family-mcp`, [heriass2 release](https://github.com/heriass/family-mcp/releases/tag/abler-mcp%400.7.2-heriass2),
 adds ONE tool on top of upstream `abler-mcp@0.7.2`:
 
 | Tool | Parameters | Result |
 | --- | --- | --- |
 | `describe_api` | Optional `filter` (case-insensitive field-name substring), `max_chars` (default 60000, 1000–200000) | Query/Mutation field names, descriptions, typed arguments and return types; recursively used mutation input objects and enum values. |
+
+Phase 2 extends this same tool with `root` (`Mutation`, the default, or `Query`),
+`probes` (at most 60 GraphQL field names), and `describe_fields` (at most 20).
+Names must match `^[A-Za-z_][A-Za-z0-9_]{0,63}$`; user input cannot insert a
+GraphQL document or argument values. Omitted probes uses the root-specific
+built-in attendance/event/survey/message list or the Query feed/content list;
+an explicit empty array disables these name probes.
+
+Known fields are probed without arguments or a selection set. If validation
+reports a required `input` argument, a second guarded probe supplies `input:{}`.
+`describedFields` returns sanitized stage errors, required argument/input-field
+names and types, and whether a selection set is required. Optional arguments
+and fields not mentioned by server validation remain unknown. All fallback
+documents, including root-type discovery, contain a reserved invalid field and
+skip the candidate, so no resolver executes. The authenticated client and
+its existing refresh behavior are unchanged; no write tools are added.
 
 It reuses the authenticated session, GraphQL endpoint, cookie rotation and
 existing single-refresh behavior. Disabled introspection returns
