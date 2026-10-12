@@ -1,0 +1,67 @@
+name: InfoMentor full read-only content Linux release
+on:
+  push:
+    branches: [infomentor-full-content]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux-x64:
+    if: github.repository == 'heriass/family-mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Format changed test fixtures
+        run: bunx oxfmt -c .oxfmtrc.json --write rust/infomentor-mcp/tests/ts/{integration.test.ts,parity.ts,school.test.ts} tooling/release/build-binary.mjs
+      - name: Install pinned Rust
+        working-directory: rust
+        run: rustup toolchain install
+      - name: Check and test InfoMentor
+        working-directory: rust
+        run: |
+          cargo fmt --package infomentor-mcp
+          cargo fmt --check
+          cargo clippy -p infomentor-mcp --all-targets --all-features --locked -- -D warnings
+          FAMILY_MCP_BUN="$(command -v bun)" cargo test -p infomentor-mcp --all-features --locked --no-fail-fast
+      - name: Build and verify GNU Linux x64 archive
+        working-directory: packages/infomentor-mcp
+        env:
+          FAMILY_MCP_RUST_TARGET: x86_64-unknown-linux-gnu
+        run: |
+          bun run release:check
+          bun run build:binary
+          bun run test:binary
+          bun run test:installer
+          cd release
+          sha256sum -c infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256
+          tar -tzf infomentor-mcp-0.9.1-linux-x64.tar.gz
+          tar -tzf infomentor-mcp-0.9.1-linux-x64.tar.gz | grep -Fx 'infomentor-mcp/bin/infomentor-mcp'
+          file native/infomentor-mcp
+      - name: Update verified fix5 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          Full read-only school content, based on the working OAuth fix4 login and extending the initial fix5 assessment tools. Executable version remains 0.9.1.
+
+          Adds runtime app-data discovery and allowlisted app_get, full calendar entries and attachment metadata, homework, assignments and linked objectives, communication news, all assessment lists and full assessment details with one level of linked items. All readers accept optional childId/pupil_id and max_chars (default 60000), retain the selected pupil, clean HTML to plain text, redact secrets and kennitala, normalize recognized dates to ISO 8601 in Iceland time, and report unavailable school features explicitly. Attachments expose sanitized paths only and are never downloaded. Unknown response models are retained as bounded sanitized JSON, with truncation/paging metadata.
+
+          Per the user's explicit authorization, existing get_messages/get_message/get_notifications now include full source content while retaining their original fields. Other existing tools, login/password handling, INFOMENTOR_DEBUG and empty POST Content-Length: 0 are preserved. New and upgraded content reads reuse the authenticated client without automatic re-login or added retries.
+
+          Endpoint keys AND paths must pass a positive read-action allowlist; send/save/update/delete/mark/set/post/upload/reply/create/remove and additional write names are rejected. Read redirects cannot change actions. Request bodies reject write/secret fields. No write tools or school-record mutations were added.
+
+          Verification: Rust formatting, Clippy, unit tests for forbidden keys, URL resolution, HTML text and bounds; full-content loopback integration for runtime discovery, pupil selection, all content families, links/attachments/dates, missing features, paging/truncation/redaction and no automatic login; assessment, existing-tool parity, login and protocol regressions; native MCP smoke, installer tests and SHA-256 verification. Live school data was not tested.
+
+          Linux x64 uses x86_64-unknown-linux-gnu as requested. Assets preserve original names and layout: infomentor-mcp-0.9.1-linux-x64.tar.gz, its .sha256 sidecar, binary at infomentor-mcp/bin/infomentor-mcp. This replaces the initial assessment-only fix5 assets and moves its tag to this verified full-content commit.
+          EOF
+          gh api 'repos/heriass/family-mcp/git/refs/tags/infomentor-mcp@0.9.1-oauth-fix5' --method PATCH -f sha="$GITHUB_SHA" -F force=true
+          gh release upload 'infomentor-mcp@0.9.1-oauth-fix5' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --clobber
+          gh release edit 'infomentor-mcp@0.9.1-oauth-fix5' --title 'infomentor-mcp 0.9.1 — Full school content, OAuth fix5 (linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
