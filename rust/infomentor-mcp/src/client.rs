@@ -358,12 +358,27 @@ impl Client {
         signal: Signal,
         read: impl FnMut(&mut Http, &Context) -> Result<T> + Send + 'static,
     ) -> Result<T> {
+        self.read_mode(signal, read, true).await
+    }
+
+    async fn read_once<T: Send + 'static>(
+        self: &Arc<Self>, signal: Signal,
+        read: impl FnMut(&mut Http, &Context) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        self.read_mode(signal, read, false).await
+    }
+
+    async fn read_mode<T: Send + 'static>(
+        self: &Arc<Self>, signal: Signal,
+        read: impl FnMut(&mut Http, &Context) -> Result<T> + Send + 'static,
+        allow_renewal: bool,
+    ) -> Result<T> {
         let signal = signal.any(&self.lifetime.signal());
         // A local queue preserves call order; the store lock also excludes other MCP processes.
         let mut active = self.active.clone().lock_owned().await;
         let client = self.clone();
 
-        tokio::task::spawn_blocking(move || client.held_read(&mut active, &signal, read))
+        tokio::task::spawn_blocking(move || client.held_read(&mut active, &signal, read, allow_renewal))
             .await
             .unwrap_or(Err(Fail::Unknown))
     }
@@ -373,6 +388,7 @@ impl Client {
         active: &mut Option<Active>,
         signal: &Signal,
         mut read: impl FnMut(&mut Http, &Context) -> Result<T>,
+        allow_renewal: bool,
     ) -> Result<T> {
         signal.check()?;
 
@@ -412,7 +428,7 @@ impl Client {
             };
 
             match step.verified(current, &mut saved, held, &mut read) {
-                Err(fail) if fail.is(Code::LoginRequired) => {
+                Err(fail) if allow_renewal && fail.is(Code::LoginRequired) => {
                     self.renew(active, saved, held, step, &mut read, fail)
                 }
                 outcome => {
@@ -491,11 +507,16 @@ impl Client {
     }
 
     pub async fn assessments(self: &Arc<Self>, input: AssessmentsRequest, signal: Signal) -> Result<Value> {
-        self.read(signal, move |http, context| crate::assessment::overview(http, context.signal, &input)).await
+        self.read_once(signal, move |http, context| crate::assessment::overview(http, context.signal, &input)).await
     }
 
     pub async fn assessment_item(self: &Arc<Self>, input: AssessmentItemRequest, signal: Signal) -> Result<Value> {
-        self.read(signal, move |http, context| crate::assessment::item(http, context.signal, &input)).await
+        self.read_once(signal, move |http, context| crate::assessment::item(http, context.signal, &input)).await
+    }
+
+    pub async fn school(self: &Arc<Self>, input: crate::school::Request, signal: Signal) -> Result<Value> {
+        let signal = signal.any(&Signal::timeout(COLLECTION_TIMEOUT));
+        self.read_once(signal, move |http, context| crate::school::read(http, context.signal, &input)).await
     }
 
     pub async fn select_child(self: &Arc<Self>, child_id: String, signal: Signal) -> Result<Value> {
@@ -510,8 +531,10 @@ impl Client {
         input: MessagesRequest,
         signal: Signal,
     ) -> Result<Value> {
-        self.read(signal, move |http, context| {
-            let page = messages_page(
+        let signal = signal.any(&Signal::timeout(COLLECTION_TIMEOUT));
+        self.read_once(signal, move |http, context| {
+            crate::school::selected(http, context.signal, input.child_id.as_deref())?;
+            let page = crate::school::messages_page(
                 http,
                 context.signal,
                 input.folder,
@@ -520,25 +543,30 @@ impl Client {
                 &input.search,
             )?;
             // The live endpoint reports page: 0 even when it correctly applies a requested page.
-            Ok(json!({
+            let mut full = Vec::new();
+            for item in &page.items {
+                if let Some(id) = item["id"].as_i64() { full.push(crate::school::full_message(http, context.signal, id)?); }
+            }
+            Ok(crate::school::legacy_result(&json!({
                 "items": page.items,
                 "skipped": page.skipped,
                 "more": page.more,
                 "page": input.page,
                 "pageSize": input.page_size,
                 "folder": input.folder,
+                "fullContent": full,
                 "retrievedAt": js::iso_string(js::now_ms()),
-            }))
+            }), input.max_chars))
         })
         .await
     }
 
-    pub async fn message(self: &Arc<Self>, id: i64, signal: Signal) -> Result<Value> {
-        self.read(signal, move |http, context| {
-            Ok(json!({
-                "message": message(http, context.signal, id)?,
-                "retrievedAt": js::iso_string(js::now_ms()),
-            }))
+    pub async fn message(self: &Arc<Self>, id: i64, child: Option<String>, max_chars: usize, signal: Signal) -> Result<Value> {
+        self.read_once(signal, move |http, context| {
+            crate::school::selected(http, context.signal, child.as_deref())?;
+            let mut data = crate::school::full_message(http, context.signal, id)?;
+            data["retrievedAt"] = json!(js::iso_string(js::now_ms()));
+            Ok(crate::school::legacy_result(&data, max_chars))
         })
         .await
     }
@@ -548,8 +576,11 @@ impl Client {
         input: NotificationsRequest,
         signal: Signal,
     ) -> Result<Value> {
-        self.read(signal, move |http, context| {
-            let feed = notifications(http, context.signal)?;
+        self.read_once(signal, move |http, context| {
+            crate::school::selected(http, context.signal, input.child_id.as_deref())?;
+            let mut full = crate::school::full_notifications(http, context.signal)?;
+            if full["available"] == false { return Ok(full); }
+            let feed = shapes::notifications_response(&full).ok_or(Fail::new(Code::UnexpectedPage, "InfoMentor notification data is unavailable or its format has changed."))?;
             let shown: Vec<Value> = feed
                 .items
                 .into_iter()
@@ -559,13 +590,17 @@ impl Client {
                             || item["currentlySelectedPupil"] == Value::Bool(true))
                 })
                 .collect();
-            Ok(json!({
+            if let Some(items) = full["notifications"].as_array_mut() {
+                items.retain(|item| (input.include_cleared || item["state"] != "Cleared") && (!input.selected_child_only || item["currentlySelectedPupil"] == true));
+            }
+            Ok(crate::school::legacy_result(&json!({
                 "notifications": shown,
                 "skipped": feed.skipped,
                 "selectedChildOnly": input.selected_child_only,
                 "includeCleared": input.include_cleared,
+                "fullContent": full,
                 "retrievedAt": js::iso_string(js::now_ms()),
-            }))
+            }), input.max_chars))
         })
         .await
     }
