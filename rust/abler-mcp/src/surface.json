@@ -1353,6 +1353,105 @@
     "idempotentHint": true,
     "openWorldHint": true
    }
+  },
+  {
+   "name": "describe_api",
+   "description": "Discover authenticated Abler GraphQL schema metadata only. Returns every matching Query/Mutation field with descriptions, typed arguments and return type, plus recursively used mutation input objects and enums. filter is a case-insensitive field-name substring; max_chars defaults to 60000 (1000–200000). Truncation keeps complete JSON records with a note. Reuses the existing session, cookie rotation, /graphql endpoint and existing single-refresh UNAUTHENTICATED handling. If introspection is disabled, returns introspection:false with sanitized diagnostics and mutation-name suggestions from validation probes. Probes use a reserved invalid field and @skip(if:true), so no candidate mutation resolver runs. No profile records, headers, cookie/token values or mutation default values are returned. Metadata names are not authorization to execute mutations; no write tools are added.",
+   "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "filter": {
+      "type": "string",
+      "maxLength": 256
+     },
+     "max_chars": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 200000,
+      "default": 60000
+     }
+    }
+   },
+   "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+     "introspection": {
+      "type": "boolean"
+     },
+     "queryType": {
+      "type": "string"
+     },
+     "mutationType": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "query": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "mutation": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "inputObjects": {
+      "type": "object"
+     },
+     "enums": {
+      "type": "object"
+     },
+     "filter": {
+      "type": "string"
+     },
+     "errors": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "probes": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "suggestions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "complete": {
+      "type": "boolean"
+     },
+     "truncated": {
+      "type": "boolean"
+     },
+     "note": {
+      "type": "string"
+     },
+     "full_chars": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "introspection",
+     "truncated"
+    ]
+   },
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true
+   }
   }
  ]
 }
