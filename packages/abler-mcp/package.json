@@ -63,7 +63,8 @@
         "list_child_schedules",
         "get_event",
         "list_conversations",
-        "list_messages"
+        "list_messages",
+        "describe_api"
       ]
     }
   }
