@@ -63,7 +63,9 @@
         "infomentor_get_messages",
         "infomentor_get_message",
         "infomentor_get_notifications",
-        "infomentor_collect_updates"
+        "infomentor_collect_updates",
+        "infomentor_get_assessments",
+        "infomentor_get_assessment_item"
       ],
       "extraFiles": [
         {
