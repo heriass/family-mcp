@@ -457,6 +457,46 @@ pub fn parse_forms(html: &str) -> Vec<Form> {
     forms.forms
 }
 
+/// Plain school content, preserving paragraphs, list items and safe link destinations.
+/// Hidden/script/form contents and HTML attributes never cross the tool boundary.
+pub fn plain_text(html: &str) -> String {
+    #[derive(Default)]
+    struct Text {
+        out: String,
+        hidden: usize,
+        links: Vec<Option<String>>,
+    }
+    impl Handler for Text {
+        fn open(&mut self, name: &str, attrs: &[(String, String)]) {
+            if matches!(name, "script" | "style" | "form" | "noscript") { self.hidden += 1; }
+            if self.hidden != 0 { return; }
+            if matches!(name, "p" | "div" | "br" | "li" | "h1" | "h2" | "h3" | "tr") { self.out.push('\n'); }
+            if name == "li" { self.out.push_str("- "); }
+            if name == "a" {
+                let href = attribute(attrs, "href").and_then(|href| {
+                    let url = url::Url::parse(crate::session::PARENT_URL).ok()?.join(href).ok()?;
+                    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() { return None; }
+                    let mut url = url;
+                    url.set_query(None); url.set_fragment(None);
+                    Some(url.to_string())
+                });
+                self.links.push(href);
+            }
+        }
+        fn close(&mut self, name: &str) {
+            if matches!(name, "script" | "style" | "form" | "noscript") { self.hidden = self.hidden.saturating_sub(1); return; }
+            if self.hidden != 0 { return; }
+            if name == "a" && let Some(Some(href)) = self.links.pop() { self.out.push_str(&format!(" ({href})")); }
+            if matches!(name, "p" | "div" | "li" | "h1" | "h2" | "h3" | "tr") { self.out.push('\n'); }
+        }
+        fn text(&mut self, text: &str) { if self.hidden == 0 { self.out.push_str(text); } }
+    }
+    let mut text = Text::default();
+    parse(html, &mut text);
+    text.out.lines().map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty()).collect::<Vec<_>>().join("\n")
+}
+
 /// The capture of `/IMHome\.home\.homeData\s*=\s*([\s\S]*?);\s*IMHome\.home\.init\(/`.
 fn home_data(script: &str) -> Option<&str> {
     const DATA: &str = "IMHome.home.homeData";
