@@ -115,7 +115,7 @@ fn login_origin() -> String {
 pub fn authenticate(http: &mut Http, credentials: Credentials, signal: &Signal) -> Result<()> {
     // The parent entry point establishes the OAuth transaction before Mentor can accept a
     // password. Http follows the login redirect while retaining and validating every cookie.
-    let entry = http.request(PARENT_URL, None, signal, PARENT_URL)?;
+    let entry = http.request_login(PARENT_URL, None, signal, PARENT_URL)?;
     let handoff = html::parse_forms(&entry.text)
         .into_iter()
         .find(|form| form.id == "openid_message")
@@ -133,7 +133,7 @@ pub fn authenticate(http: &mut Http, credentials: Credentials, signal: &Signal) 
             "InfoMentor returned an unsupported authentication handoff.",
         ));
     }
-    let page = http.request(
+    let page = http.request_login(
         destination.as_str(),
         Some(&handoff.fields),
         signal,
@@ -160,7 +160,7 @@ pub fn authenticate(http: &mut Http, credentials: Credentials, signal: &Signal) 
     form.set(PASSWORD_FIELD, &credentials.password);
     form.set("login_ascx$btnLogin", "Innskrá");
     drop(credentials);
-    let response = http.request(
+    let response = http.request_login(
         action.as_str(),
         Some(&form.fields),
         signal,
@@ -189,7 +189,7 @@ pub fn authenticate(http: &mut Http, credentials: Credentials, signal: &Signal) 
                 "InfoMentor returned an unsupported authentication handoff.",
             ));
         }
-        http.request(
+        http.request_login(
             destination.as_str(),
             Some(&relay.fields),
             signal,
