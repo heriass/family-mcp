@@ -552,7 +552,9 @@ async function runServe(side: 'ts' | 'rust', home: string, env: Record<string, s
       server: client.getServerVersion(),
       capabilities: client.getServerCapabilities(),
       instructions: client.getInstructions(),
-      tools: (await client.listTools()).tools,
+      // The one Rust-only discovery addition has its own integration tests. Compare every
+      // pre-existing tool's description, schema and annotations unchanged.
+      tools: (await client.listTools()).tools.filter(tool => tool.name !== 'describe_api'),
     });
   }
 
