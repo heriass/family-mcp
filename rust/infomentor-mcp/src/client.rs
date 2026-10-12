@@ -14,7 +14,7 @@ use tokio::sync::{Mutex, watch};
 use crate::collection::{Source, collect_updates};
 use crate::error::{Code, Fail, Result};
 use crate::http::{Http, Parent};
-use crate::input::{CollectRequest, LoginRequest, MessagesRequest, NotificationsRequest};
+use crate::input::{AssessmentItemRequest, AssessmentsRequest, CollectRequest, LoginRequest, MessagesRequest, NotificationsRequest};
 use crate::js;
 use crate::login::{
     self, create_authenticated_http, has_configured_credentials, resolve_credentials,
@@ -488,6 +488,14 @@ impl Client {
     pub async fn overview(self: &Arc<Self>, signal: Signal) -> Result<Value> {
         self.read(signal, |http, context| overview(http, context.signal, None))
             .await
+    }
+
+    pub async fn assessments(self: &Arc<Self>, input: AssessmentsRequest, signal: Signal) -> Result<Value> {
+        self.read(signal, move |http, context| crate::assessment::overview(http, context.signal, &input)).await
+    }
+
+    pub async fn assessment_item(self: &Arc<Self>, input: AssessmentItemRequest, signal: Signal) -> Result<Value> {
+        self.read(signal, move |http, context| crate::assessment::item(http, context.signal, &input)).await
     }
 
     pub async fn select_child(self: &Arc<Self>, child_id: String, signal: Signal) -> Result<Value> {
