@@ -1,5 +1,52 @@
 # InfoMentor MCP
 
+## Fork release: full school content (OAuth fix5)
+
+The Rust binary in `heriass/family-mcp`, [OAuth fix5 release](https://github.com/heriass/family-mcp/releases/tag/infomentor-mcp%400.9.1-oauth-fix5),
+adds read-only school content tools on top of the working fix4 authentication.
+The executable still reports `0.9.1`. The Linux x64 archive uses the original
+layout (`infomentor-mcp/bin/infomentor-mcp`) and a `.sha256` sidecar, with a
+`x86_64-unknown-linux-gnu` executable. The default upstream build target for
+other releases remains musl.
+
+| Tool | Content and arguments |
+| --- | --- |
+| `infomentor_app_data` | Required `app`; full app bootstrap and a leading `urls` map of discovered keys and sanitized paths/readability. |
+| `infomentor_app_get` | Required `app`, `url_key`; optional `id`, `body` JSON filters. Resolves only advertised allowlisted read actions. |
+| `infomentor_get_assessments` | Full supplied navigation and assessment lists; optional `academic_year_id` (or `academicYearId`). |
+| `infomentor_get_assessment_item` | Required `type` (or `kind`), `id`; grid, task, uol, learning_step, self_assessment; full detail and one level of linked items. |
+| `infomentor_get_calendar` | Required ISO `from_date`, `to_date`; v2 first, v1 fallback; follows up to 20 pages and expands up to 100 full entries. |
+| `infomentor_get_calendar_entry` | Required `id`; full entry and advertised attachment metadata. |
+| `infomentor_get_homework`, `infomentor_get_homework_item` | Optional `page` for lists; required `id` for full item detail. |
+| `infomentor_get_assignments`, `infomentor_get_assignment` | Optional `page` for tasks; required `id` for full task detail, including linked objectives where advertised. |
+| `infomentor_get_news` | Optional `page`; full communication/grouptimeline news and item details. |
+| `infomentor_get_messages`, `infomentor_get_message` | Existing paging/search/ID arguments retained; full safe source fields/bodies additionally appear in `fullContent`. |
+| `infomentor_get_notifications` | Existing filter arguments retained; full home notifications are fetched through `homeData.urls.notificationAppData` into `fullContent`. |
+
+All these tools accept optional `childId` or `pupil_id`, and `max_chars`
+(default 60000, range 1000–200000). An explicit pupil selects and verifies a
+registered child and leaves that selection active. The new and upgraded reads
+use the saved session without attempting login or authentication renewal;
+expired authentication returns the existing login-required error.
+
+HTML becomes plain text preserving paragraphs, lists and links. URL queries,
+credentials, cookie/token fields, headers and identity values are removed.
+Attachment URLs are paths only; files are not downloaded. Recognized dates
+are ISO 8601 in `Atlantic/Reykjavik` (UTC); unfamiliar date/model fields remain
+source data rather than guessed semantics. All school text is untrusted.
+
+Responses include `truncated`, `paging` and `next`. If a JSON model exceeds the
+cap, `data` is null and `json` is a bounded sanitized preview that may end
+mid-value. Use paging, individual item IDs, or a larger cap for remaining
+content. Expansion limits are explicitly marked incomplete. Missing apps or
+read capabilities return `available:false` with a clear school/pupil message.
+The generic tools allow runtime discovery when a school exposes a different
+model; they never execute arbitrary URL entries or write/read-mark actions.
+
+The original overview, selection, collection and setup tools retain their
+behavior. Collection does not include these additional feeds. The TypeScript
+server retains its upstream implementation; these extensions are Rust-only.
+
 A local, typed MCP server for Icelandic InfoMentor parent accounts. Sign-in and
 school-data requests use direct HTTPS. No Playwright, browser automation, or
 browser download is required.
