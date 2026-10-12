@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- `serve` now ends when the connection to the host breaks, as the TypeScript
+  server does: when a write to stdout fails because the host closed its end,
+  or when one input line passes 10 MiB, its newline included. That limit is
+  exact; the TypeScript server can also close on a shorter line, depending on
+  how the input arrives in reads, which is an intended difference. Calls in
+  flight are cancelled at once and the server closes as on SIGTERM, then the
+  process exits with code 0 and prints nothing. Before, it kept running until
+  stdin ended, and it buffered an over-long line without limit.
+- After stdin ends, `serve` now also exits within about 6 s while an answer is
+  still waiting on a stdout the host has stopped reading: the usual 5 s wait
+  for calls in flight, then calls are cancelled and the server closes. Before,
+  it could wait for that write forever. The TypeScript server does not exit in
+  that case either.
+
 ## 0.2.0
 
 - Builds the native executable from Rust with rustls and locked dependencies.

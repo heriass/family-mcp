@@ -66,6 +66,8 @@ async function fixture(bound = 1_500, args: string[] = []) {
   let id = 0;
   let stdout = '';
   let errors = '';
+  // Set by `deafen`: the next message read is the last, then the read side of stdout closes.
+  let deaf = false;
   const stderr = (async () => {
     for await (const chunk of child.stderr) errors += new TextDecoder().decode(chunk);
     return errors;
@@ -83,6 +85,7 @@ async function fixture(bound = 1_500, args: string[] = []) {
         pending.get(message.id)?.(message.result);
         pending.delete(message.id);
       }
+      if (deaf) break;
     }
   })();
   const request = (method: string, params: object) => {
@@ -120,7 +123,28 @@ async function fixture(bound = 1_500, args: string[] = []) {
     await close();
     throw error;
   }
-  return { state, seen, paths, call, close, cli, source, started };
+  /** The host closes its read side of stdout after one more answer, as a broken pipe. */
+  const deafen = async () => {
+    deaf = true;
+    await request('ping', {});
+    await output;
+  };
+  const tick = () => process.kill(child.pid, 'SIGUSR1');
+  return {
+    state,
+    seen,
+    paths,
+    call,
+    close,
+    cli,
+    source,
+    started,
+    deafen,
+    tick,
+    stdin: child.stdin,
+    exited: child.exited,
+    kill: () => child.kill('SIGKILL'),
+  };
 }
 
 test('idle serve survives several TTLs within the scaled 30-minute bound, including the flag', async () => {
@@ -330,4 +354,36 @@ test('failed ticks retry before cadence and warn exactly once past the age bound
     output = await f.close();
   }
   expect(output.stderr.split(WARNING).length - 1).toBe(1);
+});
+
+// Rust: the binary's counterpart of integration.test.ts:2113 and :2132, which run the TypeScript
+// scheduler under the SDK runtime in-process. A broken connection while the host still holds
+// stdin open (a failed stdout write, or one input line over the SDK's 10 MiB read buffer) ends
+// serve with code 0 well inside the stalled tick's delay: closing stops the keep-alive and aborts
+// its tick in flight, without which the close would wait for that tick.
+test('a broken output pipe or an oversized input line ends serve and aborts the tick in flight', async () => {
+  for (const breaks of ['output', 'input'] as const) {
+    const f = await fixture(60_000);
+    try {
+      f.state.delays[USER] = 60_000;
+      const from = f.seen.length;
+      f.tick();
+      await until(() => f.paths(from).includes(USER));
+
+      if (breaks === 'output') {
+        await f.deafen();
+        f.stdin.write('{"jsonrpc":"2.0","id":99,"method":"ping"}\n');
+      } else {
+        f.stdin.write(Buffer.alloc(10 * 1024 * 1024 + 1, 0x20));
+      }
+      await f.stdin.flush();
+      const ended = await Promise.race([f.exited, Bun.sleep(5_000).then(() => 'running')]);
+      expect(ended).toBe(0);
+      expect(f.paths(from)).toEqual([USER]);
+    } finally {
+      // A serve still closing would wait out the stalled tick; SIGTERM does not stop a close.
+      f.kill();
+      await f.close();
+    }
+  }
 });

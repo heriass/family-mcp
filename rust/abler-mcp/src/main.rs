@@ -273,7 +273,8 @@ fn administer(args: Args) -> Result<()> {
     save_verified(&jar)
 }
 
-/// Serve until stdin ends or SIGINT or SIGTERM arrives, then cancel and wait for operations.
+/// Serve until stdin ends, the connection breaks (a failed stdout write or an input line over
+/// 10 MiB), or SIGINT or SIGTERM arrives, then cancel and wait for operations.
 async fn serve() -> Result<()> {
     let client = Arc::new(Client::new(auth::session_path()?, Slot::Current, None)?);
 

@@ -205,9 +205,10 @@ fn route(args: Args) -> Result<Command> {
     }
 }
 
-/// Serve until stdin ends or SIGINT or SIGTERM arrives, then stop the keep-alive and wait for
-/// operations in flight. The session path is checked first, as the keep-alive's client is
-/// built before serving; TypeScript without the keep-alive would only refuse each request.
+/// Serve until stdin ends, the connection breaks (a failed stdout write or an input line over
+/// 10 MiB), or SIGINT or SIGTERM arrives, then stop the keep-alive and wait for operations in
+/// flight. The session path is checked first, as the keep-alive's client is built before serving;
+/// TypeScript without the keep-alive would only refuse each request.
 async fn serve(allow_absence_writes: bool, keep_alive: bool) -> Result<()> {
     let client = client::Client::from_environment(allow_absence_writes)?;
     mcp_runtime::serve_stdio(server::Inna::new(client, keep_alive))

@@ -66,9 +66,10 @@ pub fn invalid_arguments(name: &str, issues: &str) -> CallToolResult {
 }
 
 /// rmcp's per-request token, as the TypeScript SDK's `ctx.mcpReq.signal`: it completes when the
-/// host cancels the call (`notifications/cancelled`) and when serving stops, which on SIGINT or
-/// SIGTERM is at once, but at stdin's end only after rmcp has waited up to 5 s for calls in flight
-/// to answer (tests/signals.rs). It also completes once the call has answered.
+/// host cancels the call (`notifications/cancelled`) and when serving stops, which on SIGINT,
+/// SIGTERM or a broken connection is at once, but at stdin's end only after rmcp has waited up to
+/// 5 s for calls in flight to answer (tests/signals.rs, tests/connection.rs). It also completes
+/// once the call has answered.
 pub type Cancelled = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 /// One MCP server: its identity, surface and tools, and its stdio lifetime hooks.

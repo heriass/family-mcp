@@ -171,7 +171,8 @@ fn options(args: &Args) -> Result<Options> {
     })
 }
 
-/// Serve until stdin ends or SIGINT or SIGTERM arrives, then cancel and wait for operations.
+/// Serve until stdin ends, the connection breaks (a failed stdout write or an input line over
+/// 10 MiB), or SIGINT or SIGTERM arrives, then cancel and wait for operations.
 async fn serve(allow_setup_tools: bool, options: Options) -> Result<()> {
     let client = Client::new(options).ok_or(Fail::Unknown)?;
     mcp_runtime::serve_stdio(server::InfoMentor::new(allow_setup_tools, client))
