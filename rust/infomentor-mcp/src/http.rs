@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use mcp_runtime::BodyError;
 use reqwest::header::{
-    ACCEPT, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue, LOCATION, ORIGIN, REFERER,
-    RETRY_AFTER, SET_COOKIE, USER_AGENT,
+    ACCEPT, ACCEPT_LANGUAGE, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue, LOCATION,
+    ORIGIN, REFERER, RETRY_AFTER, SET_COOKIE, USER_AGENT,
 };
 use serde_json::Value;
 use tokio::time::Instant;
@@ -214,6 +214,28 @@ impl Http {
         signal: &Signal,
         source: &str,
     ) -> Result<Page> {
+        self.request_mode(value, fields, signal, source, false)
+    }
+
+    /// Browser headers for a login request and every redirect it follows.
+    pub fn request_login(
+        &mut self,
+        value: &str,
+        fields: Option<&[(String, String)]>,
+        signal: &Signal,
+        source: &str,
+    ) -> Result<Page> {
+        self.request_mode(value, fields, signal, source, true)
+    }
+
+    fn request_mode(
+        &mut self,
+        value: &str,
+        fields: Option<&[(String, String)]>,
+        signal: &Signal,
+        source: &str,
+        browser_login: bool,
+    ) -> Result<Page> {
         let now = js::now_ms();
 
         if now < self.cooldown_until {
@@ -229,7 +251,7 @@ impl Http {
         let body = fields.map(form_body);
         let previous = trusted_url(source)?;
 
-        match self.hops(url, body, previous, &request_signal) {
+        match self.hops(url, body, previous, &request_signal, browser_login) {
             Ok(page) => Ok(page),
             Err(_) if signal.aborted() => Err(CANCELLED),
             Err(Stop::Fail(fail @ Fail::Im { .. })) => Err(fail),
@@ -250,6 +272,7 @@ impl Http {
         mut body: Option<String>,
         mut previous: Url,
         signal: &Signal,
+        browser_login: bool,
     ) -> std::result::Result<Page, Stop> {
         for _ in 0..10 {
             signal.check()?;
@@ -258,9 +281,18 @@ impl Http {
                 headers.insert(name, header(value).ok_or(Stop::Failed)?);
                 Ok(())
             };
-            set(ACCEPT, "application/json, text/html;q=0.9")?;
+            if browser_login {
+                set(
+                    ACCEPT,
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                )?;
+                set(ACCEPT_LANGUAGE, "is-IS,is;q=0.9,en;q=0.8")?;
+                set(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")?;
+            } else {
+                set(ACCEPT, "application/json, text/html;q=0.9")?;
+                set(USER_AGENT, AGENT)?;
+            }
             set(REFERER, previous.as_str())?;
-            set(USER_AGENT, AGENT)?;
             let cookies = self.jar.header(&url);
 
             if !cookies.is_empty() {
