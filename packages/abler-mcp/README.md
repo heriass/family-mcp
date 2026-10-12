@@ -2,7 +2,7 @@
 
 ## Fork: read-only schema discovery
 
-The Rust binary in `heriass/family-mcp`, release `abler-mcp@0.7.2-heriass1`,
+The Rust binary in `heriass/family-mcp`, [heriass1 release](https://github.com/heriass/family-mcp/releases/tag/abler-mcp%400.7.2-heriass1),
 adds ONE tool on top of upstream `abler-mcp@0.7.2`:
 
 | Tool | Parameters | Result |
