@@ -918,6 +918,11 @@ test('expired sessions renew once with private credentials, preserve account and
     if (failureStatus && input.href === PARENT_URL)
       return new Response('', { status: failureStatus });
 
+    // Expiration applies to the old authenticated session, not the fresh OAuth entry point.
+    if (input.href === PARENT_URL &&
+        !(new Headers(init?.headers).get('cookie') ?? '').includes('IMHome='))
+      return routes.fetch(input, init);
+
     if (input.pathname.endsWith('/isauthenticated/')) {
       if (expired) return Response.json(false);
     }
