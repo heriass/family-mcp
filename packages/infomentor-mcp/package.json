@@ -65,7 +65,16 @@
         "infomentor_get_notifications",
         "infomentor_collect_updates",
         "infomentor_get_assessments",
-        "infomentor_get_assessment_item"
+        "infomentor_get_assessment_item",
+        "infomentor_app_data",
+        "infomentor_app_get",
+        "infomentor_get_calendar",
+        "infomentor_get_calendar_entry",
+        "infomentor_get_homework",
+        "infomentor_get_homework_item",
+        "infomentor_get_assignments",
+        "infomentor_get_assignment",
+        "infomentor_get_news"
       ],
       "extraFiles": [
         {
