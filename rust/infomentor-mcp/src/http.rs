@@ -381,6 +381,9 @@ impl Http {
         browser_login: bool,
     ) -> std::result::Result<Page, Stop> {
         let debug = std::env::var("INFOMENTOR_DEBUG").is_ok_and(|value| value == "1");
+        // Assessment reads must never replay their POST against a different action.
+        // This guard applies only to the new assessment controller, not existing requests.
+        let assessment_path = url.path().to_ascii_lowercase().starts_with("/assessmentv2/assessmentv2/").then(|| url.path().to_owned());
         for _ in 0..10 {
             signal.check()?;
             let mut headers = HeaderMap::new();
@@ -455,6 +458,11 @@ impl Http {
                         "InfoMentor requested an unsupported cross-origin form redirect.",
                     )
                     .into());
+                }
+                if body.is_some() && assessment_path.as_ref().is_some_and(|path| {
+                    next.path() != path || next.query().is_some() || next.fragment().is_some()
+                }) {
+                    return Err(Fail::new(Code::UnexpectedPage, "InfoMentor requested an unsupported assessment read redirect.").into());
                 }
                 previous = std::mem::replace(&mut url, next);
                 continue;
