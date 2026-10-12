@@ -15,13 +15,17 @@ pub struct MessagesRequest {
     pub search: String,
     pub page: i64,
     pub page_size: i64,
+    pub child_id: Option<String>,
+    pub max_chars: usize,
 }
 
 /// `notificationsRequestSchema`, defaults applied.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NotificationsRequest {
     pub selected_child_only: bool,
     pub include_cleared: bool,
+    pub child_id: Option<String>,
+    pub max_chars: usize,
 }
 
 /// `collectRequestSchema`, defaults applied.
@@ -45,6 +49,7 @@ pub struct LoginRequest {
 pub struct AssessmentsRequest {
     pub child_id: Option<String>,
     pub academic_year_id: Option<String>,
+    pub max_chars: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,6 +57,7 @@ pub struct AssessmentItemRequest {
     pub child_id: Option<String>,
     pub kind: &'static str,
     pub id: String,
+    pub max_chars: usize,
 }
 
 fn assessment_id(parse: &mut Parse, value: Option<&Value>) -> Option<String> {
@@ -66,17 +72,19 @@ fn assessment_id(parse: &mut Parse, value: Option<&Value>) -> Option<String> {
 }
 
 pub fn assessments(arguments: &Map<String, Value>) -> Result<AssessmentsRequest, String> {
-    object(arguments, &["childId", "academicYearId"], |parse, args| AssessmentsRequest {
-        child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))),
-        academic_year_id: optional(parse, args, "academicYearId", assessment_id),
+    object(arguments, &["childId", "pupil_id", "academicYearId", "academic_year_id", "max_chars"], |parse, args| AssessmentsRequest {
+        child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))).or(optional(parse, args, "pupil_id", |p, v| p.string(v, (1, 1024)))),
+        academic_year_id: optional(parse, args, "academicYearId", assessment_id).or(optional(parse, args, "academic_year_id", assessment_id)),
+        max_chars: parse.at("max_chars").int_or(args.get("max_chars"), (1000, 200_000), 60_000) as usize,
     }, |_| None)
 }
 
 pub fn assessment_item(arguments: &Map<String, Value>) -> Result<AssessmentItemRequest, String> {
-    object(arguments, &["childId", "kind", "id"], |parse, args| AssessmentItemRequest {
-        child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))),
-        kind: parse.at("kind").option(args.get("kind"), &crate::assessment::KINDS).unwrap_or("grid"),
+    object(arguments, &["childId", "pupil_id", "kind", "type", "id", "max_chars"], |parse, args| AssessmentItemRequest {
+        child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))).or(optional(parse, args, "pupil_id", |p, v| p.string(v, (1, 1024)))),
+        kind: parse.at("kind").option(args.get("kind").or(args.get("type")), &crate::assessment::KINDS).unwrap_or("grid"),
         id: assessment_id(&mut parse.at("id"), args.get("id")).unwrap_or_default(),
+        max_chars: parse.at("max_chars").int_or(args.get("max_chars"), (1000, 200_000), 60_000) as usize,
     }, |_| None)
 }
 
@@ -190,8 +198,10 @@ pub fn select_child(arguments: &Map<String, Value>) -> Result<String, String> {
 pub fn messages(arguments: &Map<String, Value>) -> Result<MessagesRequest, String> {
     object(
         arguments,
-        &["folder", "search", "page", "pageSize"],
+        &["folder", "search", "page", "pageSize", "childId", "pupil_id", "max_chars"],
         |parse, args| MessagesRequest {
+            child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))).or(optional(parse, args, "pupil_id", |p, v| p.string(v, (1, 1024)))),
+            max_chars: parse.at("max_chars").int_or(args.get("max_chars"), (1000, 200_000), 60_000) as usize,
             folder: optional(parse, args, "folder", |p, v| {
                 p.option(v, &["inbox", "sent"])
             })
@@ -218,12 +228,24 @@ pub fn message(arguments: &Map<String, Value>) -> Result<i64, String> {
     Ok(id.unwrap_or_default())
 }
 
+pub fn message_context(arguments: &Map<String, Value>) -> Result<(i64, Option<String>, usize), String> {
+    let mut legacy = arguments.clone();
+    let child = legacy.remove("childId").or_else(|| legacy.remove("pupil_id"));
+    let max_chars = legacy.remove("max_chars");
+    let id = message(&legacy)?;
+    let child = match child { None => None, Some(Value::String(s)) if !s.is_empty() && s.len() <= 1024 => Some(s), _ => return Err("childId: expected a nonempty string.".to_owned()) };
+    let max_chars = match max_chars { None => 60_000, Some(v) if v.as_u64().is_some_and(|n| (1000..=200_000).contains(&n)) => v.as_u64().unwrap_or(60_000) as usize, _ => return Err("max_chars: integer outside supported range.".to_owned()) };
+    Ok((id, child, max_chars))
+}
+
 /// `notificationsRequestSchema`.
 pub fn notifications(arguments: &Map<String, Value>) -> Result<NotificationsRequest, String> {
     object(
         arguments,
-        &["selectedChildOnly", "includeCleared"],
+        &["selectedChildOnly", "includeCleared", "childId", "pupil_id", "max_chars"],
         |parse, args| NotificationsRequest {
+            child_id: optional(parse, args, "childId", |p, v| p.string(v, (1, 1024))).or(optional(parse, args, "pupil_id", |p, v| p.string(v, (1, 1024)))),
+            max_chars: parse.at("max_chars").int_or(args.get("max_chars"), (1000, 200_000), 60_000) as usize,
             selected_child_only: parse
                 .at("selectedChildOnly")
                 .boolean_or(args.get("selectedChildOnly"), false),
@@ -415,6 +437,8 @@ mod tests {
         assert_eq!(
             messages(&args(json!({"page": 2}))),
             Ok(MessagesRequest {
+                child_id: None,
+                max_chars: 60_000,
                 folder: "inbox",
                 search: String::new(),
                 page: 2,
@@ -424,6 +448,8 @@ mod tests {
         assert_eq!(
             notifications(&args(json!({"includeCleared": true}))),
             Ok(NotificationsRequest {
+                child_id: None,
+                max_chars: 60_000,
                 selected_child_only: false,
                 include_cleared: true,
             })
