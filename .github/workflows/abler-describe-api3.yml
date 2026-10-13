@@ -47,7 +47,7 @@ jobs:
           tar -tzf abler-mcp-0.7.2-linux-x64.tar.gz
           tar -tzf abler-mcp-0.7.2-linux-x64.tar.gz | grep -Fx 'abler-mcp/bin/abler-mcp'
           file native/abler-mcp
-          file native/abler-mcp | grep -q 'statically linked'
+          file native/abler-mcp | grep -Eq 'statically linked|static-pie linked'
       - name: Publish verified fork release
         env:
           GH_TOKEN: ${{ github.token }}
