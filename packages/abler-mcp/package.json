@@ -1,7 +1,7 @@
 {
   "name": "abler-mcp",
   "version": "0.7.2",
-  "description": "Unofficial, read-only Abler schedules and messages MCP server with portable session authentication",
+  "description": "Unofficial Abler schedules, messages, and confirmed actions MCP server with portable session authentication",
   "keywords": [
     "abler",
     "family",
@@ -64,7 +64,13 @@
         "get_event",
         "list_conversations",
         "list_messages",
-        "describe_api"
+        "describe_api",
+        "mark_conversation_read",
+        "mark_all_read",
+        "reply_to_conversation",
+        "set_child_attendance",
+        "join_event",
+        "leave_event"
       ]
     }
   }
