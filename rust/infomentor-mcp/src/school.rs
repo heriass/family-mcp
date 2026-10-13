@@ -83,10 +83,12 @@ pub fn resolve_url(urls: &Value, key: &str, id: Option<&str>) -> Result<String> 
     let url = Url::parse(PARENT_URL).and_then(|base| base.join(link)).map_err(|_| changed())?;
     let url = trusted_url(url.as_str()).map_err(|_| changed())?;
     let parts: Vec<&str> = url.path().trim_matches('/').split('/').collect();
+    let communication_list = parts.len() == 3 && parts[0].eq_ignore_ascii_case("communication")
+        && ["getNewsList", "getDocumentsList", "getLinksList"].iter().any(|key| parts[2].eq_ignore_ascii_case(key));
     if origin(&url) != "https://minn.infomentor.is" || url.query().is_some() || url.fragment().is_some()
         || parts.len() != 3 || parts.iter().any(|part| forbidden(part) || part.contains('%'))
         || !APPS.iter().any(|app| parts[0].eq_ignore_ascii_case(app))
-        || !parts[0].eq_ignore_ascii_case(parts[1])
+        || (!parts[0].eq_ignore_ascii_case(parts[1]) && !communication_list)
         || !(["appdata", "notificationappdata", "item"].contains(&parts[2].to_ascii_lowercase().as_str())
             || READ_KEYS.iter().any(|read| parts[2].eq_ignore_ascii_case(read) || parts[2].eq_ignore_ascii_case(read.trim_start_matches("get").trim_end_matches("Url"))))
     { return Err(changed()); }
@@ -375,7 +377,7 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
     let parent = selected(http, signal, request.child.as_deref())?;
     let child = parent.pupils.iter().find(|pupil| pupil.selected).ok_or_else(changed)?;
     let choices: &[&str] = match request.operation {
-        "infomentor_get_calendar" | "infomentor_get_calendar_entry" => &["calendarv2", "calendar"],
+        "infomentor_get_calendar" | "infomentor_get_calendar_entry" => &["calendarv2"],
         "infomentor_get_homework" | "infomentor_get_homework_item" => &["homework"],
         "infomentor_get_assignments" | "infomentor_get_assignment" => &["task"],
         "infomentor_get_news" => &["communication", "grouptimeline"],
@@ -387,9 +389,6 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
     };
     if !enabled(&parent, app_name) { return Ok(not_available(app_name, &child.id)); }
     let app = match load(http, signal, app_name) {
-        Err(fail) if app_name == "calendarv2" && enabled(&parent, "calendar") && fail.is(Code::UnexpectedPage) => {
-            let mut fallback = request.clone(); fallback.app = Some("calendar".to_owned()); return read(http, signal, &fallback);
-        },
         outcome => outcome?,
     };
     let mut body = request.body.clone();
@@ -397,11 +396,11 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
         else if let Some(key) = request.key.as_deref() { Some(key) }
         else {
             let candidates: &[&str] = match request.operation {
-                "infomentor_get_calendar" => &["getEntries", "getEntriesUrl", "getCalendarData"],
+                "infomentor_get_calendar" => &["getEntries"],
                 "infomentor_get_calendar_entry" => &["getEntry", "getById", "itemUrl"],
                 "infomentor_get_homework" => &["getMessages", "getMoreItems", "list"],
                 "infomentor_get_homework_item" => &["getMessage", "getById", "itemUrl"],
-                "infomentor_get_assignments" => &["getTasks", "getEntriesUrl", "allTimelineEntries"],
+                "infomentor_get_assignments" => &["getTasks"],
                 "infomentor_get_assignment" => &["getTask", "getById", "itemUrl"],
                 "infomentor_get_news" => &["getNewsList", "list", "getMoreItems"],
                 _ => &[],
@@ -409,32 +408,19 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
             find_key(&app, candidates)
         };
     if request.operation != "infomentor_app_data" && key.is_none() {
-        if app_name == "calendarv2" && enabled(&parent, "calendar") {
-            let mut fallback = request.clone(); fallback.app = Some("calendar".to_owned()); return read(http, signal, &fallback);
-        }
         if app_name == "communication" && enabled(&parent, "grouptimeline") {
             let mut fallback = request.clone(); fallback.app = Some("grouptimeline".to_owned()); return read(http, signal, &fallback);
         }
         return Ok(not_available(app_name, &child.id));
     }
     if request.operation == "infomentor_get_calendar" {
-        body = json!({"fromDate": request.from, "toDate": request.to, "page": request.page, "pageSize": 100});
+        body = json!({"startDate": request.from, "endDate": request.to});
+    } else if request.operation == "infomentor_get_assignments" {
+        body = json!({});
     } else if request.id.is_none() && !matches!(request.operation, "infomentor_app_data" | "infomentor_app_get") {
         body = json!({"page": request.page, "pageSize": 100});
     }
     let mut data = match key { Some(key) => fetch(http, signal, &app, key, request.id.as_deref(), &body)?, None => app.clone() };
-    if request.operation == "infomentor_get_calendar" && let Some(key) = key {
-        let mut pages = vec![data.clone()];
-        let mut page = request.page;
-        while (data["more"] == true || data["hasMore"] == true || data["nextPage"].as_i64().is_some()) && pages.len() < 20 {
-            let next = data["nextPage"].as_i64().unwrap_or(page + 1);
-            if next <= page { return Err(changed()); }
-            page = next; body["page"] = json!(page);
-            data = fetch(http, signal, &app, key, None, &body)?; pages.push(data.clone());
-        }
-        let more = data["more"] == true || data["hasMore"] == true || data["nextPage"].as_i64().is_some();
-        data = json!({"pages": pages, "page": page, "more": more, "nextPage": if more { Some(page + 1) } else { None }});
-    }
     let mut full = data.clone();
     if !matches!(request.operation, "infomentor_app_data" | "infomentor_app_get") {
         let candidates: &[&str] = match app_name { "calendar" | "calendarv2" => &["getEntry", "getById", "itemUrl"], "homework" => &["getMessage", "getById", "itemUrl"], "task" => &["getTask", "getById", "itemUrl"], _ => &["getById", "itemUrl"] };
@@ -498,6 +484,19 @@ mod tests {
         assert_eq!(resolve_url(&urls, "getEntry", Some("12")).unwrap(), "calendarv2/calendarv2/GetEntry/12");
         for key in ["getMessage", "itemUrl", "missing", "sendMessage"] { assert!(resolve_url(&urls, key, None).is_err()); }
         assert!(!safe_body(&json!({"filter": {"markRead": true}}), 0));
+    }
+    #[test]
+    fn communication_news_document_and_link_lists_are_allowlisted_read_paths() {
+        let urls = json!({
+            "getNewsList": "/Communication/News/GetNewsList",
+            "getDocumentsList": "/Communication/Documents/GetDocumentsList",
+            "getLinksList": "/Communication/Links/GetLinksList",
+            "bad": "/Communication/News/SaveNewsList"
+        });
+        for key in ["getNewsList", "getDocumentsList", "getLinksList"] {
+            assert!(resolve_url(&urls, key, None).is_ok(), "{key}");
+        }
+        assert!(resolve_url(&urls, "bad", None).is_err());
     }
     #[test]
     fn full_text_metadata_and_identity_are_sanitized_with_explicit_truncation() {

@@ -470,8 +470,10 @@ impl Http {
                     )
                     .into());
                 }
+                if assessment_path.is_some() && login_path(next.path(), true) {
+                    return Err(Fail::new(Code::LoginRequired, "The InfoMentor session expired during a school read. Sign in again before retrying.").into());
+                }
                 if assessment_path.as_ref().is_some_and(|path| {
-                    if body.is_none() && login_path(next.path(), true) { return false; }
                     !next.path().eq_ignore_ascii_case(path) || next.query().is_some() || next.fragment().is_some()
                 }) {
                     return Err(Fail::new(Code::UnexpectedPage, "InfoMentor requested an unsupported school read redirect.").into());

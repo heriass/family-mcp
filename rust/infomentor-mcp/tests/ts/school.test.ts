@@ -22,9 +22,9 @@ test('full school readers discover only read actions and return complete text, l
   const seen: string[] = [];
   const appNames = ['calendarv2','calendar','homework','task','communication','grouptimeline','message','assessmentv2'];
   const keyNames: Record<string,string[]> = {
-    calendarv2:['getEntriesUrl','getEntry','getAttachments'], calendar:['getEntries','getEntry','getAttachments'],
+    calendarv2:['getEntries','getEntry','getAttachments'], calendar:['getEntries','getEntry','getAttachments'],
     homework:['getMessages','getMessage','getMoreItems'], task:['getTasks','getTask','getUol'],
-    communication:['getNewsList','itemUrl'], grouptimeline:['getNewsList','itemUrl'],
+    communication:['getNewsList','getDocumentsList','getLinksList','itemUrl'], grouptimeline:['getNewsList','itemUrl'],
     message:['getMessages','getMessage'], assessmentv2:['getNavigationData','getGridItems','getTaskItems','getUolItems','getLearningStepItems','getSelfAssessmentItems'],
   };
   const summary = {id:41,messageContextType:'General',sentUser:{id:12,displayName:'Teacher'},isNew:true,messageSubject:'Read this',timeSent:'12.10.2026 09:00'};
@@ -36,21 +36,23 @@ test('full school readers discover only read actions and return complete text, l
     if(path === '/account/pupilswitcher/switchpupil/102') { selected='second'; return new Response(null,{status:302,headers:{Location:PARENT_URL}}); }
     assert.equal(init.method,'POST');
     assert.match(new Headers(init.headers).get('cookie') ?? '', /IMHome=synthetic/);
-    if(path === '/home/home/appdata') return Response.json({homeData:{urls:{notificationAppData:'/NotificationApp/NotificationApp/appData'}}});
+    if(path === '/home/home/appdata') return Response.json({homeData:{urls:mode==='homeUnavailable'?{}:{notificationAppData:'/NotificationApp/NotificationApp/appData'}}});
     if(path === '/notificationapp/notificationapp/appdata') return Response.json({notifications:[{id:1,title:'Notice',subTitle:'Full notice text',subjectsCourses:'',dateSent:'12.10.2026',appType:'homework',state:'New',currentlySelectedPupil:true,body:'<p>Full announcement</p>'}]});
     if(path === '/message/message/getmessages') return Response.json({items:[summary],more:false});
     if(path === '/message/message/getmessage') return Response.json({...summary,messageBody:'<p>Full message including all paragraphs.</p>',messageBodyPlainText:'Full message including all paragraphs.',toUsers:[{id:13,displayName:'Parent'}],messageFolder:'Inbox',attachments:[{name:'Sheet.pdf',type:'application/pdf',size:45,downloadUrl:'/docs/1?token=private'}]});
     const [,app,controller,action,id] = path.split('/');
-    assert.equal(app,controller);
+    const communicationList = app === 'communication' && ['getnewslist','getdocumentslist','getlinkslist'].includes(action);
+    assert.ok(app === controller || communicationList);
     if(action === 'appdata') {
       if(mode==='write302') return new Response(null,{status:302,headers:{Location:`/${app}/${app}/Update`}});
       const keys = (mode === 'fallback' && app === 'calendarv2') ? [] : keyNames[app!] ?? [];
-      const urls = Object.fromEntries(keys.map(key=>[key,`/${app}/${app}/${key === 'itemUrl' ? 'Item' : key}`]));
+      const urls = Object.fromEntries(keys.map(key=>[key,app === 'communication' && key !== 'itemUrl' ? `/Communication/${key === 'getNewsList' ? 'News' : key === 'getDocumentsList' ? 'Documents' : 'Links'}/${key}` : `/${app}/${app}/${key === 'itemUrl' ? 'Item' : key}`]));
       urls.sendMessage=`/${app}/${app}/SendMessage`;
       urls.externalUpdateUrl=`/${app}/${app}/Update`;
       return Response.json({urls,gridItemsList:[{id:41,isNew:true}],uolItemsList:[],selfAssessmentItemsList:[],items:[{id:41}]});
     }
     assert.equal(new Headers(init.headers).get('content-type'),'application/json');
+    if(mode === 'loginRedirect') return new Response(null,{status:302,headers:{Location:'/Authentication/Authentication/Login'}});
     if(id) {
       assert.equal(init.body ?? '','');
       assert.equal(new Headers(init.headers).get('content-length'),'0');
@@ -60,9 +62,10 @@ test('full school readers discover only read actions and return complete text, l
       return Response.json({id:41,...detail,description:mode==='large'?detail.description+'x'.repeat(3000):detail.description,linkedUols:[{id:'objective-1'}],linkedTasks:app==='assessmentv2'?[{id:42}]:[]});
     }
     const filters = JSON.parse(String(init.body ?? '{}'));
+    if(path === '/task/task/gettasks') assert.deepEqual(filters,{});
     if(app === 'calendarv2' || app === 'calendar') {
-      assert.equal(filters.fromDate,'2026-10-01');assert.equal(filters.toDate,'2026-10-31');
-      return Response.json({entries:[{id:41,title:'Entry',start:'2026-10-12T09:00:00'}],page:filters.page,more:filters.page===1,nextPage:filters.page===1?2:null});
+      assert.deepEqual(filters,{startDate:'2026-10-01',endDate:'2026-10-31'});
+      return Response.json({entries:[{id:41,title:'Entry',start:'2026-10-12T09:00:00'}],more:false});
     }
     return Response.json({items:[{id:41}],page:filters.page,more:false});
   }});
@@ -93,16 +96,19 @@ test('full school readers discover only read actions and return complete text, l
       assert.ok(!JSON.stringify(response).includes('private'));
       assert.ok(!JSON.stringify(response).includes('0101991239'));
     }
-    assert.ok(seen.includes('POST /calendarv2/calendarv2/getentriesurl'));
+    assert.ok(seen.includes('POST /calendarv2/calendarv2/getentries'));
+    const assignments=await call('infomentor_get_assignments');
+    assert.ok(!assignments.isError);assert.ok(seen.includes('POST /task/task/gettasks'));
     mode='fallback';
-    const fallback=await call('infomentor_get_calendar',{from_date:'2026-10-01',to_date:'2026-10-31'});
-    assert.ok(!fallback.isError);assert.equal(fallback.structuredContent?.app,'calendar');mode='normal';
+    const unavailableCalendar=await call('infomentor_get_calendar',{from_date:'2026-10-01',to_date:'2026-10-31'});
+    assert.ok(!unavailableCalendar.isError);assert.equal(unavailableCalendar.structuredContent?.available,false);mode='normal';
     for(const name of ['infomentor_get_calendar_entry','infomentor_get_homework_item','infomentor_get_assignment']) {
       const response=await call(name,{id:41});assert.ok(!response.isError,JSON.stringify(response));
       assert.match(JSON.stringify(response),/2026-10-12T09:00:00.000Z/);
       assert.match(JSON.stringify(response),/2026-10-13T10:30:00.000Z/);
       if(name==='infomentor_get_calendar_entry') assert.match(JSON.stringify(response),/Notes.pdf/);
     }
+    assert.ok(seen.includes('POST /task/task/gettask/41'));
     const assessment=await call('infomentor_get_assessment_item',{type:'grid',id:41});
     assert.ok(!assessment.isError);assert.match(JSON.stringify(assessment),/Linked assessment full text/);
     assert.ok(!seen.some(path=>path.endsWith('/43')));
@@ -117,6 +123,20 @@ test('full school readers discover only read actions and return complete text, l
     mode='normal';
     const notifications=await call('infomentor_get_notifications');
     assert.ok(!notifications.isError);assert.match(JSON.stringify(notifications.structuredContent?.fullContent),/Full announcement/);
+    mode='homeUnavailable';
+    const legacyNotifications=await call('infomentor_get_notifications');
+    assert.ok(!legacyNotifications.isError);assert.match(JSON.stringify(legacyNotifications.structuredContent),/Notice/);
+    mode='normal';
+    const news=await call('infomentor_get_news');
+    assert.ok(!news.isError);
+    for(const key of ['getNewsList','getDocumentsList','getLinksList']) {
+      const response=await call('infomentor_app_get',{app:'communication',url_key:key,body:{}});
+      assert.ok(!response.isError,JSON.stringify(response));
+    }
+    mode='loginRedirect';
+    const expiredRead=await call('infomentor_get_calendar',{from_date:'2026-10-01',to_date:'2026-10-31'});
+    assert.ok(expiredRead.isError);assert.match(JSON.stringify(expiredRead),/session expired/i);
+    mode='normal';
     const truncated=await call('infomentor_app_data',{app:'task',max_chars:1000});
     assert.ok(!truncated.isError);
     mode='disabled';

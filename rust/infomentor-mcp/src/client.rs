@@ -579,7 +579,10 @@ impl Client {
         self.read_once(signal, move |http, context| {
             crate::school::selected(http, context.signal, input.child_id.as_deref())?;
             let mut full = crate::school::full_notifications(http, context.signal)?;
-            if full["available"] == false { return Ok(full); }
+            if full["available"] == false {
+                let legacy = notifications(http, context.signal)?;
+                full = json!({"notifications": legacy.items, "skipped": legacy.skipped});
+            }
             let feed = shapes::notifications_response(&full).ok_or(Fail::new(Code::UnexpectedPage, "InfoMentor notification data is unavailable or its format has changed."))?;
             let shown: Vec<Value> = feed
                 .items

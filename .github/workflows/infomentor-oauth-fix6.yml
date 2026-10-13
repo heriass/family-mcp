@@ -1,0 +1,63 @@
+name: InfoMentor OAuth fix6 static musl Linux release
+on:
+  push:
+    branches: [infomentor-full-content]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux-x64:
+    if: github.repository == 'heriass/family-mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Install static musl linker and target
+        working-directory: rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          rustup toolchain install
+          rustup target add x86_64-unknown-linux-musl
+      - name: Check and test InfoMentor
+        working-directory: rust
+        run: |
+          cargo fmt --package infomentor-mcp
+          cargo fmt --check
+          cargo clippy -p infomentor-mcp --all-targets --all-features --locked -- -D warnings
+          FAMILY_MCP_BUN="$(command -v bun)" cargo test -p infomentor-mcp --all-features --locked --no-fail-fast
+      - name: Build and verify static Linux x64 archive
+        working-directory: packages/infomentor-mcp
+        run: |
+          bun run release:check
+          bun run build:binary
+          bun run test:binary
+          bun run test:installer
+          cd release
+          sha256sum -c infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256
+          tar -tzf infomentor-mcp-0.9.1-linux-x64.tar.gz
+          tar -tzf infomentor-mcp-0.9.1-linux-x64.tar.gz | grep -Fx 'infomentor-mcp/bin/infomentor-mcp'
+          file native/infomentor-mcp | grep -E 'statically linked|static-pie linked'
+      - name: Publish fix6 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          Read-only InfoMentor school reader fixes, based on infomentor-mcp@0.9.1-oauth-fix5. Executable version remains 0.9.1.
+
+          Calendar reads now POST exactly startDate/endDate to calendarv2/getEntries. Assignments use task/getTasks with an empty JSON body, and task details continue through getTask/{id}. Redirects to the login page during a school read report an expired session. Communication news, document, and link list paths are accepted only for their allowlisted read actions. Notifications fall back to the legacy fix4 list when full home notifications are unavailable.
+
+          Read-only endpoint allowlists, forbidden-action checks, redirect restrictions, redaction, and response size limits remain in force. No write tools or password/login behavior changed.
+
+          Verification: Rust format, Clippy, unit tests, TypeScript school-reader integration tests, release checks, native binary smoke test, installer test, archive layout, and SHA-256. Linux x64 is built for x86_64-unknown-linux-musl and verified statically linked.
+
+          Assets preserve upstream names and layout: infomentor-mcp-0.9.1-linux-x64.tar.gz, its .sha256 sidecar, binary at infomentor-mcp/bin/infomentor-mcp.
+          EOF
+          gh release create 'infomentor-mcp@0.9.1-oauth-fix6' packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz packages/infomentor-mcp/release/infomentor-mcp-0.9.1-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'infomentor-mcp 0.9.1 — OAuth fix6 (static linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"

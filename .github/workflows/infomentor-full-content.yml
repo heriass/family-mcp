@@ -1,7 +1,5 @@
 name: InfoMentor full read-only content Linux release
 on:
-  push:
-    branches: [infomentor-full-content]
   workflow_dispatch:
 permissions:
   contents: write
