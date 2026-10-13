@@ -71,6 +71,19 @@ pub fn document(operation: &str, root: Root, field: &str, empty_input: bool) -> 
     format!("{} {operation} {{ __describe_api_invalid {field}{args} @skip(if: true) }}", root.operation())
 }
 
+/// A guarded validation-only enum probe. The reserved invalid field rejects the complete
+/// mutation document before execution; @skip remains a second guard on the candidate field.
+pub fn attendance_enum_probe() -> String {
+    r#"mutation DescribeAttendanceEnum { __describe_api_invalid setPlayerAttendanceV4(eventId: "0", playerId: "0", status: __INVALID_ENUM__) @skip(if: true) }"#.to_owned()
+}
+
+pub fn attendance_enum_values(messages: &[String]) -> Vec<String> {
+    messages.iter().filter(|message| message.to_ascii_lowercase().contains("player_attendance_status"))
+        .flat_map(|message| suggestions(message))
+        .filter(|value| probe_name(value) && value != "__INVALID_ENUM__")
+        .collect::<BTreeSet<_>>().into_iter().collect()
+}
+
 pub fn cookie_values(serialized: &Value) -> Vec<String> {
     serialized["cookies"].as_array().into_iter().flatten()
         .filter_map(|cookie| cookie["value"].as_str().filter(|value| !value.is_empty()).map(str::to_owned)).collect()
@@ -345,6 +358,12 @@ mod tests {
                 }
             }
         }
+        let enum_probe = attendance_enum_probe();
+        assert!(enum_probe.starts_with("mutation "));
+        assert!(enum_probe.contains("__describe_api_invalid"));
+        assert!(enum_probe.contains("setPlayerAttendanceV4(eventId: \"0\", playerId: \"0\", status: __INVALID_ENUM__) @skip(if: true)"));
+        let enum_error = "Value \"__INVALID_ENUM__\" does not exist in \"PLAYER_ATTENDANCE_STATUS\" enum. Did you mean \"PRESENT\", \"ABSENT\", or \"LATE\"?";
+        assert_eq!(attendance_enum_values(&[enum_error.to_owned()]), ["ABSENT", "LATE", "PRESENT"]);
     }
     #[test]
     fn argument_validation_metadata_is_parsed_and_private_diagnostics_are_redacted() {

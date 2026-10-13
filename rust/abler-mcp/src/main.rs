@@ -9,6 +9,7 @@ mod input;
 mod jar;
 mod js;
 mod login;
+mod mutations;
 mod server;
 
 use std::io::Read;
@@ -27,7 +28,7 @@ use crate::jar::Jar;
 // Browser exports can include unrelated cookies; bound both credential input paths.
 const COOKIE_EXPORT_MAX_BYTES: usize = 4 * 1024 * 1024;
 
-const HELP: &str = "abler-mcp — unofficial read-only Abler MCP server
+const HELP: &str = "abler-mcp — unofficial Abler MCP server
 
   abler-mcp [serve]                 Start the stdio MCP server
   abler-mcp auth login              Open a temporary browser for Abler sign-in
@@ -43,6 +44,7 @@ Login options: --timeout <seconds> (default 300), --browser <path>, --keep-brows
 The temporary profile is deleted after login; --keep-browser leaves live credentials in it without a debugging endpoint.
 The session is saved encrypted. ABLER_SESSION_FILE names an older version's plaintext session file.
 On a headless machine, run auth import there with a browser cookie export.
+MCP exposes only six fixed action operations. Reply, attendance, join and leave require an approved confirm:true preview.
 ";
 
 /// What the CLI prints for a failure without a reviewed message.

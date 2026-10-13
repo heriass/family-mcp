@@ -631,7 +631,15 @@ impl Client {
                 Some(crate::describe::schema(&Value::Object(data), &input, &secrets)?)
             } else { None };
             if schema.is_some() && !input.explicit_probes && input.describe_fields.is_empty() { return schema.ok_or(Fail::Unknown); }
+            let introspection_disabled = schema.is_none();
             let errors = result.messages.iter().map(|message| crate::describe::safe_error(message, &secrets)).collect::<Vec<_>>();
+            let mut enum_values = Vec::new();
+            if introspection_disabled && matches!(input.root, crate::describe::Root::Mutation) {
+                let query = crate::describe::attendance_enum_probe();
+                let response = client.query_response(session, "DescribeAttendanceEnum", &query, json!({}), false, true)?;
+                secrets.extend(response.redactions);
+                enum_values = crate::mutations::enum_values(&response.messages);
+            }
             let root_query = crate::describe::document("DescribeApiRootType", input.root, "__typename", false);
             let typename = client.query_response(session, "DescribeApiRootType", &root_query, json!({}), false, true)?;
             secrets.extend(typename.redactions);
@@ -668,9 +676,47 @@ impl Client {
             let mut output = if let Some(schema) = schema { schema } else { crate::describe::fallback(errors, root_type.clone(), Vec::new(), Vec::new(), &input, &secrets)? };
             output["root"] = json!(input.root.label()); output["rootType"] = json!(root_type);
             output["probes"] = json!(probes); output["suggestions"] = json!(suggestions); output["describedFields"] = json!(described);
+            if introspection_disabled && matches!(input.root, crate::describe::Root::Mutation) { output["enumValues"] = json!({"PLAYER_ATTENDANCE_STATUS":enum_values}); }
             if matches!(input.root, crate::describe::Root::Query) && output["introspection"] == false { output["queryType"] = output["rootType"].clone(); output["mutationType"] = Value::Null; }
             crate::describe::scrub(&mut output, &secrets);
             Ok(crate::describe::limit(output, input.max_chars))
+        })
+    }
+
+    /// Execute one of the small, fixed action set after enforcing child and confirmation policy.
+    pub fn action(&self, action: crate::mutations::Action) -> Result<Value> {
+        self.session(|client, session| {
+            let needs_profile = action.child_id().is_some() || matches!(&action, crate::mutations::Action::MarkAllRead);
+            let profile = if needs_profile { Some(client.profile_with_session(session)?) } else { None };
+            let player_id = if let Some(child_id) = action.child_id() {
+                let profile = profile.as_ref().ok_or(Fail::Safe("Abler returned an invalid child list."))?;
+                if !crate::mutations::linked_child(child_id, profile) {
+                    return Err(Fail::Safe("Unknown child ID. Use get_profile to choose a linked child."));
+                }
+                Some(child_id)
+            } else { None };
+            let account_id = profile.as_ref().and_then(|profile| profile["id"].as_str());
+            let variables = action.variables(account_id, player_id);
+
+            if action.requires_confirmation() && !action.confirmed() {
+                return Ok(crate::mutations::preview(&action, variables));
+            }
+
+            if let Some(status) = action.attendance_status() {
+                let query = crate::describe::attendance_enum_probe();
+                let response = client.query_response(session, "ValidateAttendanceStatus", &query, json!({}), false, true)?;
+                let allowed = crate::mutations::enum_values(&response.messages);
+                crate::mutations::validate_attendance_status(status, &allowed)?;
+            }
+
+            if !crate::mutations::allowed_mutation(action.operation()) {
+                return Err(Fail::Safe("This Abler action is not available."));
+            }
+            let data = client.query(session, action.operation(), action.document(), variables, false)?;
+            if !data.contains_key(action.operation()) {
+                return Err(Fail::Safe("Abler did not confirm the requested action."));
+            }
+            Ok(json!({"success":true,"operation":action.operation()}))
         })
     }
 
