@@ -507,16 +507,16 @@ impl Client {
     }
 
     pub async fn assessments(self: &Arc<Self>, input: AssessmentsRequest, signal: Signal) -> Result<Value> {
-        self.read_once(signal, move |http, context| crate::assessment::overview(http, context.signal, &input)).await
+        self.read(signal, move |http, context| crate::assessment::overview(http, context.signal, &input)).await
     }
 
     pub async fn assessment_item(self: &Arc<Self>, input: AssessmentItemRequest, signal: Signal) -> Result<Value> {
-        self.read_once(signal, move |http, context| crate::assessment::item(http, context.signal, &input)).await
+        self.read(signal, move |http, context| crate::assessment::item(http, context.signal, &input)).await
     }
 
     pub async fn school(self: &Arc<Self>, input: crate::school::Request, signal: Signal) -> Result<Value> {
         let signal = signal.any(&Signal::timeout(COLLECTION_TIMEOUT));
-        self.read_once(signal, move |http, context| crate::school::read(http, context.signal, &input)).await
+        self.read(signal, move |http, context| crate::school::read(http, context.signal, &input)).await
     }
 
     pub async fn select_child(self: &Arc<Self>, child_id: String, signal: Signal) -> Result<Value> {
@@ -532,7 +532,7 @@ impl Client {
         signal: Signal,
     ) -> Result<Value> {
         let signal = signal.any(&Signal::timeout(COLLECTION_TIMEOUT));
-        self.read_once(signal, move |http, context| {
+        self.read(signal, move |http, context| {
             crate::school::selected(http, context.signal, input.child_id.as_deref())?;
             let page = crate::school::messages_page(
                 http,
@@ -576,7 +576,7 @@ impl Client {
         input: NotificationsRequest,
         signal: Signal,
     ) -> Result<Value> {
-        self.read_once(signal, move |http, context| {
+        self.read(signal, move |http, context| {
             crate::school::selected(http, context.signal, input.child_id.as_deref())?;
             let mut full = crate::school::full_notifications(http, context.signal)?;
             if full["available"] == false {

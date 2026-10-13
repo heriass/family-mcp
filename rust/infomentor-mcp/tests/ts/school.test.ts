@@ -145,7 +145,7 @@ test('full school readers discover only read actions and return complete text, l
   } finally {await client.close();await served.close();await rm(directory,{recursive:true,force:true});}
 });
 
-test('expired school reads never attempt configured private login or retry',async()=>{
+test('expired school reads attempt at most one renewal per call and never leak credentials',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'school-expired-'));
   const file=join(directory,'session.json');const privateFile=join(directory,'credentials.json');
   const jar=new CookieJar();await jar.setCookie('IMHome=expired; Secure; HttpOnly; Path=/',PARENT_URL);
@@ -163,7 +163,8 @@ test('expired school reads never attempt configured private login or retry',asyn
       const response=await client.callTool({name,arguments:name==='infomentor_app_data'?{app:'task'}:{}});
       assert.equal(response.isError,true);assert.ok(!JSON.stringify(response).includes('synthetic-secret'));
     }
-    assert.equal(seen.filter(path=>path.startsWith('POST')).length,0);
-    assert.equal(seen.filter(path=>path==='GET /').length,4);
+    // fix7: school reads renew like get_overview: at most one sign-in submission per call, never a loop.
+    assert.ok(seen.filter(path=>path.startsWith('POST')).length<=4,JSON.stringify(seen));
+    assert.ok(seen.filter(path=>path==='GET /').length>=4,JSON.stringify(seen));
   }finally{await client.close();await served.close();await rm(directory,{recursive:true,force:true});}
 });
