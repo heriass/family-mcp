@@ -1,0 +1,70 @@
+name: Abler API discovery and confirmed actions Linux release
+on:
+  push:
+    branches: [abler-mutations]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux-x64:
+    if: github.repository == 'heriass/family-mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Format changed test fixtures
+        run: bunx oxfmt -c .oxfmtrc.json --write rust/abler-mcp/tests/ts/{describe.test.ts,describe-fields.test.ts,integration.test.ts,mutations.test.ts,parity.ts}
+      - name: Install pinned Rust and musl
+        working-directory: rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          rustup toolchain install
+      - name: Check and test Abler
+        working-directory: rust
+        run: |
+          cargo fmt --package abler-mcp
+          cargo fmt --check
+          cargo clippy -p abler-mcp --all-targets --all-features --locked -- -D warnings
+          FAMILY_MCP_BUN="$(command -v bun)" cargo test -p abler-mcp --all-features --locked --no-fail-fast
+      - name: Build and verify upstream archive layout
+        working-directory: packages/abler-mcp
+        run: |
+          bun run release:sync
+          bun run release:check
+          bun run build:binary
+          bun run test:binary
+          bun run test:installer
+          cd release
+          sha256sum -c abler-mcp-0.7.2-linux-x64.tar.gz.sha256
+          tar -tzf abler-mcp-0.7.2-linux-x64.tar.gz
+          tar -tzf abler-mcp-0.7.2-linux-x64.tar.gz | grep -Fx 'abler-mcp/bin/abler-mcp'
+          file native/abler-mcp
+          file native/abler-mcp | grep -q 'statically linked'
+      - name: Publish verified fork release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          Phase 3: guarded API and enum discovery plus six fixed Abler actions, based on abler-mcp@0.7.2-heriass2.
+
+          Extends the same ONE tool, describe_api({filter?, max_chars?, root?, probes?, describe_fields?}), returning Query/Mutation fields with descriptions, typed arguments and return types, recursively referenced mutation input objects and enums. Default cap is 60000 characters; filtering is case-insensitive. Truncation preserves complete JSON records with a note.
+
+          Reuses the existing authenticated GraphQL transport, /graphql, cookie rotation and existing one-refresh UNAUTHENTICATED handling. No login changes or generic mutation tool were added.
+
+          When introspection returns GraphQL errors, describe_api returns sanitized field suggestions and a guarded PLAYER_ATTENDANCE_STATUS enum probe. All discovery candidates contain a reserved invalid field and @skip(if:true), so no resolver executes. Cookie/token values, headers, input defaults and personal records are never returned.
+
+          Adds mark_conversation_read and mark_all_read (idempotent) plus reply_to_conversation, set_child_attendance, join_event and leave_event. The latter four return an exact GraphQL preview without sending changes until confirm:true. Child IDs are checked against get_profile. Attendance status is checked against values discovered by the guarded enum probe. mark_all_read obtains the signed-in account ID from get_profile. Only those six fixed mutation operations can execute; payment, subscription, coach, club-admin and notification-template mutations are not exposed.
+
+          Verification: formatting, Clippy, tests for confirmation gates, child allowlists, enum validation and fixed operation allowlist; schema-discovery tests assert every enum probe is guarded; original-tool parity and browser/integration/startup/stdio tests; native MCP smoke, installer tests and archive SHA-256 verification. No live Abler writes were performed.
+
+          Linux x64 release is statically linked against musl and retains EXACT upstream 0.7.2 names and archive layout: abler-mcp-0.7.2-linux-x64.tar.gz and .sha256, executable at abler-mcp/bin/abler-mcp. The binary reports version 0.7.2.
+          EOF
+          gh release create 'abler-mcp@0.7.2-heriass3' packages/abler-mcp/release/abler-mcp-0.7.2-linux-x64.tar.gz packages/abler-mcp/release/abler-mcp-0.7.2-linux-x64.tar.gz.sha256 --target "$GITHUB_SHA" --title 'abler-mcp 0.7.2 — API discovery and confirmed actions (heriass3, linux-x64)' --notes-file "$RUNNER_TEMP/notes.md"
