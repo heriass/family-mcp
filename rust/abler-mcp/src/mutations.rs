@@ -180,7 +180,7 @@ mod tests {
                     Action::Join { child_id, event_id, age_group_id, .. } | Action::Leave { child_id, event_id, age_group_id, .. } => json!({"childId":child_id,"eventId":event_id,"ageGroupId":age_group_id,"confirm":true}),
                     _ => unreachable!(),
                 };
-                assert_eq!(input(tool, confirmed.as_object().unwrap()).unwrap().confirmed(), true);
+                assert!(input(tool, confirmed.as_object().unwrap()).unwrap().confirmed());
                 confirmed["confirm"] = Value::Bool(false);
                 assert!(!input(tool, confirmed.as_object().unwrap()).unwrap().confirmed());
             }
