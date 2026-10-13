@@ -37,7 +37,7 @@ test('full school readers discover only read actions and return complete text, l
     assert.equal(init.method,'POST');
     assert.match(new Headers(init.headers).get('cookie') ?? '', /IMHome=synthetic/);
     if(path === '/home/home/appdata') return Response.json({homeData:{urls:mode==='homeUnavailable'?{}:{notificationAppData:'/NotificationApp/NotificationApp/appData'}}});
-    if(path === '/notificationapp/notificationapp/appdata') return Response.json({notifications:[{id:1,title:'Notice',subTitle:'Full notice text',subjectsCourses:'',dateSent:'12.10.2026',appType:'homework',state:'New',currentlySelectedPupil:true,body:'<p>Full announcement</p>'}]});
+    if(path === '/notificationapp/notificationapp/appdata') return Response.json({notifications:[{id:1,title:'Notice',subTitle:'Legacy notice body',subjectsCourses:'',dateSent:'12.10.2026',appType:'Message',state:'New',type:'MessageCreated',url:'/#/message/show/41',pupilIM2Id:1,pupilSourceId:'synthetic-child',currentlySelectedPupil:true,body:'<p>Full announcement</p>'}]});
     if(path === '/message/message/getmessages') return Response.json({items:[summary],more:false});
     if(path === '/message/message/getmessage') return Response.json({...summary,messageBody:'<p>Full message including all paragraphs.</p>',messageBodyPlainText:'Full message including all paragraphs.',toUsers:[{id:13,displayName:'Parent'}],messageFolder:'Inbox',attachments:[{name:'Sheet.pdf',type:'application/pdf',size:45,downloadUrl:'/docs/1?token=private'}]});
     const [,app,controller,action,id] = path.split('/');
