@@ -1156,14 +1156,21 @@ test('MCP executable exposes only read tools and reports missing auth without pr
       'describe_api',
       'get_event',
       'get_profile',
+      'join_event',
+      'leave_event',
       'list_child_schedules',
       'list_conversations',
       'list_groups',
       'list_messages',
       'list_schedule',
+      'mark_all_read',
+      'mark_conversation_read',
+      'reply_to_conversation',
+      'set_child_attendance',
     ]);
     expect(tools.every((tool) => tool.outputSchema)).toBe(true);
-    expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true);
+    expect(tools.filter((t) => !['mark_all_read','mark_conversation_read','reply_to_conversation','set_child_attendance','join_event','leave_event'].includes(t.name)).every((t) => t.annotations?.readOnlyHint)).toBe(true);
+    expect(tools.filter((t) => ['mark_all_read','mark_conversation_read','reply_to_conversation','set_child_attendance','join_event','leave_event'].includes(t.name)).every((t) => t.annotations?.readOnlyHint === false && t.annotations?.destructiveHint === false)).toBe(true);
     const result = await client.callTool({ name: 'auth_status', arguments: {} });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain('No saved Abler session');

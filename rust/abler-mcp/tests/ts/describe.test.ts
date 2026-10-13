@@ -53,7 +53,7 @@ test('describe_api returns only typed schema metadata, filters fields and uses e
   const client=new Client({name:'describe-test',version:'1.0.0'});await client.connect(served.transport);
   try{
     const tools=(await client.listTools()).tools;
-    assert.equal(tools.length,9);assert.equal(tools.find(t=>t.name==='describe_api')?.annotations?.readOnlyHint,true);
+    assert.equal(tools.length,15);assert.equal(tools.find(t=>t.name==='describe_api')?.annotations?.readOnlyHint,true);
     const call=(args:Record<string,unknown>={})=>client.callTool({name:'describe_api',arguments:args});
     const first=await call();assert.ok(!first.isError,JSON.stringify(first));
     const out=first.structuredContent as {introspection:boolean,query:{name:string,arguments:{type:string}[],type:string,returnType:string}[],mutation:object[],inputObjects:Record<string,object[]>,enums:Record<string,string[]>};
@@ -87,6 +87,10 @@ test('disabled introspection preserves validation suggestions and never invokes 
     if(body.operationName==='DescribeApi')return Response.json({errors:[{message:'Introspection disabled private-access person@example.test 0101991239'}]},{status:400});
     assert.match(body.query,/__describe_api_invalid/);assert.match(body.query,/@skip\(if: true\)/);
     if(body.operationName==='DescribeApiRootType')return Response.json({errors:[{message:'Cannot query field "__describe_api_invalid" on type "RootMutation".'}]},{status:400});
+    if(body.operationName==='DescribeAttendanceEnum'){
+      assert.match(body.query,/setPlayerAttendanceV4\(eventId: "0", playerId: "0", status: __INVALID_ENUM__\) @skip\(if: true\)/);
+      return Response.json({errors:[{message:'Cannot query field "__describe_api_invalid" on type "RootMutation".'},{message:'Value "__INVALID_ENUM__" does not exist in "PLAYER_ATTENDANCE_STATUS" enum. Did you mean "PRESENT", "ABSENT", or "LATE"?'}]},{status:400});
+    }
     if(!body.query.includes('@skip(if: true)'))writes++;
     return Response.json({errors:[{message:'Cannot query field "markConversationRead" on type "RootMutation". Did you mean "markConversationAsRead" or "readConversation"? private-access'}]},{status:400});
   });
@@ -95,7 +99,8 @@ test('disabled introspection preserves validation suggestions and never invokes 
     const response=await client.callTool({name:'describe_api',arguments:{probes:['markConversationRead','markMessageRead','sendConversationMessage']}});assert.ok(!response.isError,JSON.stringify(response));
     assert.equal(response.structuredContent?.introspection,false);assert.equal(response.structuredContent?.mutationType,'RootMutation');
     assert.deepEqual(response.structuredContent?.suggestions,['markConversationAsRead','readConversation']);
-    assert.equal(operations.length,5);assert.equal(writes,0);
+    assert.equal(operations.length,6);assert.equal(writes,0);
+    assert.deepEqual(response.structuredContent?.enumValues,{PLAYER_ATTENDANCE_STATUS:['ABSENT','LATE','PRESENT']});
     assert.ok(!JSON.stringify(response).includes('private-access'));assert.ok(!JSON.stringify(response).includes('person@example.test'));assert.ok(!JSON.stringify(response).includes('0101991239'));
     assert.ok((response.structuredContent?.errors as string[])[0]?.includes('introspection'));
   }finally{await client.close();await served.close();await rm(directory,{recursive:true,force:true});}

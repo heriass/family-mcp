@@ -34,14 +34,14 @@ test('guarded discovery supports both root defaults and explicit fields without 
   const call=(args:Record<string,unknown>={})=>client.callTool({name:'describe_api',arguments:args});
   try {
     let before=requests;const mutation=await call();assert.ok(!mutation.isError,JSON.stringify(mutation));
-    assert.equal(requests-before,30);assert.equal(mutation.structuredContent?.root,'Mutation');
+    assert.equal(requests-before,31);assert.equal(mutation.structuredContent?.root,'Mutation');
     assert.equal((mutation.structuredContent?.probes as object[]).length,29);
     assert.ok(documents.some(query=>query.includes('SetAttendance @skip')));assert.ok(documents.some(query=>query.includes('UpdateNotificationSettings @skip')));
     root='Query';before=requests;const query=await call({root:'Query'});assert.ok(!query.isError,JSON.stringify(query));
     assert.equal(requests-before,19);assert.equal(query.structuredContent?.queryType,'RootQuery');assert.equal(query.structuredContent?.mutationType,null);
     assert.deepEqual(query.structuredContent?.suggestions,['feedItems']);
     root='Mutation';before=requests;const fields=await call({probes:[],describe_fields:['MarkAsRead','MessageReply']});assert.ok(!fields.isError,JSON.stringify(fields));
-    assert.equal(requests-before,5);
+    assert.equal(requests-before,6);
     const described=fields.structuredContent?.describedFields as {field:string,requiredArguments:{name:string,type:string}[],requiredInputFields:{name:string,type:string}[],selectionSetRequired:boolean|null,stages:object[]}[];
     assert.equal(described[0]?.requiredArguments[0]?.name,'conversationId');assert.equal(described[0]?.requiredArguments[0]?.type,'ID!');
     assert.equal(described[1]?.requiredArguments[0]?.type,'ReplyInput!');assert.equal(described[1]?.requiredInputFields[0]?.name,'text');

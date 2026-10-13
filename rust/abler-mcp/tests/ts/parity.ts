@@ -552,9 +552,9 @@ async function runServe(side: 'ts' | 'rust', home: string, env: Record<string, s
       server: client.getServerVersion(),
       capabilities: client.getServerCapabilities(),
       instructions: client.getInstructions(),
-      // The one Rust-only discovery addition has its own integration tests. Compare every
-      // pre-existing tool's description, schema and annotations unchanged.
-      tools: (await client.listTools()).tools.filter(tool => tool.name !== 'describe_api'),
+      // Rust-only discovery and fixed write tools have their own tests. Compare the
+      // pre-existing TypeScript tools' descriptions, schemas and annotations unchanged.
+      tools: (await client.listTools()).tools.filter(tool => !['describe_api','mark_conversation_read','mark_all_read','reply_to_conversation','set_child_attendance','join_event','leave_event'].includes(tool.name)),
     });
   }
 
