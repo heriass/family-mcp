@@ -388,9 +388,7 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
         None => return Ok(not_available(choices.first().copied().unwrap_or("school data"), &child.id)),
     };
     if !enabled(&parent, app_name) { return Ok(not_available(app_name, &child.id)); }
-    let app = match load(http, signal, app_name) {
-        outcome => outcome?,
-    };
+    let app = load(http, signal, app_name)?;
     let mut body = request.body.clone();
     let key = if request.operation == "infomentor_app_data" { None }
         else if let Some(key) = request.key.as_deref() { Some(key) }
@@ -420,7 +418,7 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
     } else if request.id.is_none() && !matches!(request.operation, "infomentor_app_data" | "infomentor_app_get") {
         body = json!({"page": request.page, "pageSize": 100});
     }
-    let mut data = match key { Some(key) => fetch(http, signal, &app, key, request.id.as_deref(), &body)?, None => app.clone() };
+    let data = match key { Some(key) => fetch(http, signal, &app, key, request.id.as_deref(), &body)?, None => app.clone() };
     let mut full = data.clone();
     if !matches!(request.operation, "infomentor_app_data" | "infomentor_app_get") {
         let candidates: &[&str] = match app_name { "calendar" | "calendarv2" => &["getEntry", "getById", "itemUrl"], "homework" => &["getMessage", "getById", "itemUrl"], "task" => &["getTask", "getById", "itemUrl"], _ => &["getById", "itemUrl"] };
