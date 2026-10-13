@@ -91,7 +91,7 @@ test('fixed Abler mutations require previews, linked child IDs and discovered at
 
     const allowed = ['MarkAsRead', 'MarkAllAsRead', 'MessageReply', 'setPlayerAttendanceV4', 'UserJoinEvent', 'UserLeaveEvent'];
     assert.ok(writes.length > 0);
-    assert.ok(writes.every((write) => allowed.includes(write.operation)));
+    assert.ok(writes.every((write) => allowed.includes(write.operation)), JSON.stringify(writes));
     assert.deepEqual(writes.map((write) => write.operation), ['MessageReply', 'setPlayerAttendanceV4', 'UserJoinEvent', 'UserLeaveEvent', 'MarkAsRead', 'MarkAllAsRead']);
     assert.equal(writes.find((write) => write.operation === 'MarkAllAsRead')?.variables.userId, 'user-7');
     assert.equal(writes.find((write) => write.operation === 'setPlayerAttendanceV4')?.variables.playerId, 'child-1');

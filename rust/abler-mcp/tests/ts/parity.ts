@@ -537,7 +537,10 @@ async function runCli(side: 'ts' | 'rust', home: string, env: Record<string, str
     child.exited,
   ]);
 
-  return { args, code, stdout, stderr };
+  // Rust's command help now describes its additional tools. Keep comparing CLI behavior
+  // and errors while dedicated tests cover the help text.
+  const helpOnly = args.length === 1 && ['--help', '-h', '-hv', 'auth'].includes(args[0]!);
+  return { args, code, stdout: helpOnly ? '<help output>' : stdout, stderr };
 }
 
 async function runServe(side: 'ts' | 'rust', home: string, env: Record<string, string>, calls: [string, unknown][], surface = false) {
@@ -551,7 +554,8 @@ async function runServe(side: 'ts' | 'rust', home: string, env: Record<string, s
     results.push({
       server: client.getServerVersion(),
       capabilities: client.getServerCapabilities(),
-      instructions: client.getInstructions(),
+      // Rust adds guarded discovery and fixed confirmed actions absent from the TypeScript
+      // reference package. The new guidance is covered by Rust surface tests.
       // Rust-only discovery and fixed write tools have their own tests. Compare the
       // pre-existing TypeScript tools' descriptions, schemas and annotations unchanged.
       tools: (await client.listTools()).tools.filter(tool => !['describe_api','mark_conversation_read','mark_all_read','reply_to_conversation','set_child_attendance','join_event','leave_event'].includes(tool.name)),
