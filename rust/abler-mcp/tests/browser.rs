@@ -76,3 +76,8 @@ fn the_schema_discovery_cases_pass_against_this_binary() {
 fn the_guarded_field_discovery_cases_pass_against_this_binary() {
     bun_test("describe-fields.test.ts", 1);
 }
+
+#[test]
+fn fixed_mutation_confirmation_and_allowlist_cases_pass_against_this_binary() {
+    bun_test("mutations.test.ts", 1);
+}
