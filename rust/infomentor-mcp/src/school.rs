@@ -313,6 +313,16 @@ pub fn fetch(http: &mut Http, signal: &Signal, app: &Value, key: &str, id: Optio
     http.read_json_data(&path, body, signal)
 }
 
+/// One item by ID. InfoMentor's task app reads a task with POST {"taskId": id} to getTask (as the
+/// web app does); the ID is never appended to that path. Other apps keep the {url}/{id} form.
+pub fn fetch_item(http: &mut Http, signal: &Signal, app: &Value, key: &str, id: &str) -> Result<Value> {
+    if key.eq_ignore_ascii_case("getTask") {
+        let task_id = id.parse::<i64>().map_or_else(|_| json!(id), |number| json!(number));
+        return fetch(http, signal, app, key, None, &json!({ "taskId": task_id }));
+    }
+    fetch(http, signal, app, key, Some(id), &Value::Null)
+}
+
 pub fn find_key<'a>(app: &'a Value, candidates: &[&str]) -> Option<&'a str> {
     let urls = app["urls"].as_object()?;
     candidates.iter().find_map(|candidate| urls.keys().find(|key| key.eq_ignore_ascii_case(candidate) && resolve_url(&app["urls"], key, None).is_ok()).map(String::as_str))
@@ -418,7 +428,11 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
     } else if request.id.is_none() && !matches!(request.operation, "infomentor_app_data" | "infomentor_app_get") {
         body = json!({"page": request.page, "pageSize": 100});
     }
-    let data = match key { Some(key) => fetch(http, signal, &app, key, request.id.as_deref(), &body)?, None => app.clone() };
+    let data = match (key, request.id.as_deref()) {
+        (Some(key), Some(id)) if key.eq_ignore_ascii_case("getTask") => fetch_item(http, signal, &app, key, id)?,
+        (Some(key), id) => fetch(http, signal, &app, key, id, &body)?,
+        (None, _) => app.clone(),
+    };
     let mut full = data.clone();
     if !matches!(request.operation, "infomentor_app_data" | "infomentor_app_get") {
         let candidates: &[&str] = match app_name { "calendar" | "calendarv2" => &["getEntry", "getById", "itemUrl"], "homework" => &["getMessage", "getById", "itemUrl"], "task" => &["getTask", "getById", "itemUrl"], _ => &["getById", "itemUrl"] };
@@ -430,7 +444,7 @@ pub fn read(http: &mut Http, signal: &Signal, request: &Request) -> Result<Value
             incomplete = found.len() >= 100;
             for id in found {
                 signal.check()?;
-                let detail = fetch(http, signal, &app, detail_key, Some(&id), &Value::Null)?;
+                let detail = fetch_item(http, signal, &app, detail_key, &id)?;
                 let linked = full_objectives(http, signal, &app, &detail, &mut link_budget)?;
                 details.push(json!({"id": id, "detail": detail, "linkedObjectives": linked}));
             }

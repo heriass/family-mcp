@@ -63,6 +63,7 @@ test('full school readers discover only read actions and return complete text, l
     }
     const filters = JSON.parse(String(init.body ?? '{}'));
     if(path === '/task/task/gettasks') assert.deepEqual(filters,{});
+    if(path === '/task/task/gettask') { assert.deepEqual(filters,{taskId:41}); return Response.json({id:41,...detail,linkedUols:[{id:'objective-1'}],linkedTasks:[]}); }
     if(app === 'calendarv2' || app === 'calendar') {
       assert.deepEqual(filters,{startDate:'2026-10-01',endDate:'2026-10-31'});
       return Response.json({entries:[{id:41,title:'Entry',start:'2026-10-12T09:00:00'}],more:false});
@@ -108,7 +109,7 @@ test('full school readers discover only read actions and return complete text, l
       assert.match(JSON.stringify(response),/2026-10-13T10:30:00.000Z/);
       if(name==='infomentor_get_calendar_entry') assert.match(JSON.stringify(response),/Notes.pdf/);
     }
-    assert.ok(seen.includes('POST /task/task/gettask/41'));
+    assert.ok(seen.includes('POST /task/task/gettask'));assert.ok(!seen.includes('POST /task/task/gettask/41'),'task details use a taskId body, never /getTask/{id}');
     const assessment=await call('infomentor_get_assessment_item',{type:'grid',id:41});
     assert.ok(!assessment.isError);assert.match(JSON.stringify(assessment),/Linked assessment full text/);
     assert.ok(!seen.some(path=>path.endsWith('/43')));
