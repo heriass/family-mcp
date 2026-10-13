@@ -18,7 +18,7 @@ test('fixed Abler mutations require previews, linked child IDs and discovered at
     { ...cookie, name: 'refreshToken', value: 'private-refresh' },
     { ...cookie, name: 'id_token', value: 'private-access' },
   ]));
-  const writes: { operation: string; query: string; variables: Record<string, unknown> }[] = [];
+  const writes: { operationName: string; query: string; variables: Record<string, unknown> }[] = [];
   const enumProbes: string[] = [];
   const served = await serveStdio(path, (url, init) => {
     assert.ok(url.endsWith('/graphql'));
@@ -91,12 +91,12 @@ test('fixed Abler mutations require previews, linked child IDs and discovered at
 
     const allowed = ['MarkAsRead', 'MarkAllAsRead', 'MessageReply', 'setPlayerAttendanceV4', 'UserJoinEvent', 'UserLeaveEvent'];
     assert.ok(writes.length > 0);
-    assert.ok(writes.every((write) => allowed.includes(write.operation)), JSON.stringify(writes));
-    assert.deepEqual(writes.map((write) => write.operation), ['MessageReply', 'setPlayerAttendanceV4', 'UserJoinEvent', 'UserLeaveEvent', 'MarkAsRead', 'MarkAllAsRead']);
-    assert.equal(writes.find((write) => write.operation === 'MarkAllAsRead')?.variables.userId, 'user-7');
-    assert.equal(writes.find((write) => write.operation === 'setPlayerAttendanceV4')?.variables.playerId, 'child-1');
-    assert.equal(writes.find((write) => write.operation === 'UserJoinEvent')?.variables.toEventId, 'event-1');
-    assert.ok(writes.every((write) => write.query.includes('{ __typename }') || write.operation === 'MarkAllAsRead'));
+    assert.ok(writes.every((write) => allowed.includes(write.operationName)), JSON.stringify(writes));
+    assert.deepEqual(writes.map((write) => write.operationName), ['MessageReply', 'setPlayerAttendanceV4', 'UserJoinEvent', 'UserLeaveEvent', 'MarkAsRead', 'MarkAllAsRead']);
+    assert.equal(writes.find((write) => write.operationName === 'MarkAllAsRead')?.variables.userId, 'user-7');
+    assert.equal(writes.find((write) => write.operationName === 'setPlayerAttendanceV4')?.variables.playerId, 'child-1');
+    assert.equal(writes.find((write) => write.operationName === 'UserJoinEvent')?.variables.toEventId, 'event-1');
+    assert.ok(writes.every((write) => write.query.includes('{ __typename }') || write.operationName === 'MarkAllAsRead'));
     assert.equal(enumProbes.length, 2);
   } finally {
     await client.close();
