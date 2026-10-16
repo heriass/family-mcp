@@ -126,6 +126,10 @@ def authenticated(session_factory=None):
         finally:
             try:
                 router.logout()
+            except RouterError:
+                # Útskráningarslóðin er ekki staðfest á þessum hugbúnaði; mistök þar mega ekki
+                # eyðileggja svar sem þegar var lesið (lotan rennur þá út af sjálfu sér).
+                pass
             finally:
                 router.close()
 
