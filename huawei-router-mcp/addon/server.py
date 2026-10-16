@@ -329,16 +329,17 @@ def router_status() -> str:
         return output(data)
     info = (data["deviceinfo"].get("stDeviceInfo") or [{}])[0]
     eth_rows = rows(data["eth"])
-    wan = next((r for r in eth_rows if "BytesReceived" in r and "BytesSent" in r), {})
     uplink = next((r for r in eth_rows if "X_HW_MainUpPort" in r), {})
+    up_no = re.sub(r"\D", "", str(uplink.get("X_HW_MainUpPort") or ""))
+    up = next((r for r in eth_rows if "txGoodBytes" in r and str(_port_no(r.get("domain"))) == up_no), {})
     return output({
         "model": info.get("ModelName"), "firmware": info.get("SoftwareVersion"),
         "hardware": info.get("HardwareVersion"), "description": info.get("Description"),
         "uplink_port": uplink.get("X_HW_MainUpPort"), "uplink_type": uplink.get("typpon"),
         "internet_total": {
-            "received_gb": _gb(_num(wan.get("BytesReceived"))), "sent_gb": _gb(_num(wan.get("BytesSent"))),
-            "packets_received": _num(wan.get("PacketsReceived")), "packets_sent": _num(wan.get("PacketsSent")),
-            "note": "Teljarar routersins frá síðustu endurræsingu (geta velt yfir við 4 GB á eldri hugbúnaði).",
+            "download_gb": _gb(_bytes64(up, "rxGoodBytes", "rxGoodBytes_H")) if up else None,
+            "upload_gb": _gb(_bytes64(up, "txGoodBytes", "txGoodBytes_H")) if up else None,
+            "note": "Umferð á upptengi routersins (frá ljósleiðaraboxinu) frá síðustu endurræsingu routersins.",
         },
     })
 
@@ -350,8 +351,11 @@ def router_devices(name_filter: str = "", include_offline: bool = False) -> str:
     result = read_pages("devices")
     if "error" in result:
         return output(result)
-    out = []
+    out, seen = [], set()
     for r in rows(result["devices"]):
+        if r.get("MacAddr") in seen:
+            continue
+        seen.add(r.get("MacAddr"))
         name = r.get("UserDevAlias") or r.get("HostName") or ""
         online = str(r.get("DevStatus", "")).lower() == "online"
         if (not include_offline and not online) or (name_filter and name_filter.casefold() not in name.casefold()):
@@ -407,7 +411,8 @@ def router_wifi() -> str:
             ssid = r.get("ssid") or r.get("SSID")
             if not ssid or "BeaconType" not in r:
                 continue
-            key = (r.get("domain"), ssid)
+            band = "5 GHz" if re.search(r"WLANConfiguration\.(5|6|7|8)\b", str(r.get("domain"))) else "2,4 GHz"
+            key = (ssid, band)
             if key in seen:
                 continue
             seen.add(key)
@@ -416,8 +421,7 @@ def router_wifi() -> str:
                 hidden = "0" if str(r.get("SSIDAdvertisementEnabled")) == "1" else "1"
             res.append({"ssid": ssid, "enabled": str(r.get("enable")) == "1", "guest": guest,
                         "hidden": str(hidden) == "1" if hidden is not None else None,
-                        "devices": _num(r.get("DeviceNum")), "security": r.get("BeaconType"),
-                        "band": "5 GHz" if re.search(r"WLANConfiguration\.(5|6|7|8)\b", str(r.get("domain"))) else "2,4 GHz"})
+                        "max_devices": _num(r.get("DeviceNum")), "security": r.get("BeaconType"), "band": band})
         return res
 
     return output({"wifi": nets(data["wlan"], False), "guest": nets(data["guest"], True),
