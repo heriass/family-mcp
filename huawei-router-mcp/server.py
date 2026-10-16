@@ -5,12 +5,14 @@ import os
 import re
 import base64
 import threading
+import json
+import sys
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import requests
 from mcp.server.fastmcp import FastMCP
-from router_parser import parse_constructors as parse_page, sanitize, bounded as output, redact_source
+from router_parser import parse_constructors as parse_page, sanitize, bounded as output, redact_source, scrub_text
 
 mcp = FastMCP("huawei-router")
 PAGES = {
@@ -40,21 +42,87 @@ class RouterError(RuntimeError):
     """Only fixed Icelandic messages may cross the tool boundary."""
 
 
+def location_path(location):
+    """Only known static router paths: even a path can contain a secret."""
+    try:
+        path = urlparse(location).path
+    except ValueError:
+        return "[redacted]"
+    known = set(PAGES.values()) | {"/", "/index.asp", "/login.asp", "/login.cgi",
+                                 "/logout.cgi", "/html/logout.html", "index.asp", "login.asp"}
+    return scrub_text(path) if path in known else ("[redacted]" if path else "")
+
+
 class RouterSession:
-    def __init__(self, http=None):
+    def __init__(self, http=None, steps=None):
         self.http = http or requests.Session()
         self.host = router_host()
         self.http.verify = False  # V261a-20 local, self-signed TLS; review before deployment.
         self.http.trust_env = False  # No ambient proxy credentials.
         self.logged_in = False
         self.login_attempted = False
+        self.steps = steps if steps is not None else []
 
-    def request(self, method, path, **kwargs):
+    def request(self, method, path, *, step, process=None, **kwargs):
         # Never follow redirects to another host or forward credentials there.
-        response = self.http.request(method, self.host + path, timeout=10,
-                                     allow_redirects=False, **kwargs)
-        response.raise_for_status()
-        return response
+        response, failure = None, None
+        try:
+            response = self.http.request(method, self.host + path, timeout=10,
+                                         allow_redirects=False, **kwargs)
+            response.raise_for_status()
+            return process(response) if process else response
+        except Exception as exc:
+            # Never interpolate an exception message, URL, request or response.
+            failure = type(exc).__name__
+            if isinstance(exc, RouterError):
+                raise
+            if isinstance(exc, requests.HTTPError):
+                if response is None:
+                    response = exc.response
+                code = response.status_code if response is not None else "óþekktur"
+                message = f"HTTP-villa í skrefi {step}: kóði {code}."
+            elif isinstance(exc, requests.Timeout):
+                message = f"Tími rann út í skrefi {step}."
+            elif isinstance(exc, requests.exceptions.SSLError):
+                message = f"SSL-villa í skrefi {step}."
+            elif isinstance(exc, requests.RequestException):
+                message = f"Tengivilla í skrefi {step}."
+            elif isinstance(exc, ValueError) and step.startswith("page:"):
+                message = f"Ekki tókst að þátta síðu {step[5:]} (ValueError)."
+            else:
+                message = f"Óvænt villa í skrefi {step}."
+            raise RouterError(message) from None
+        finally:
+            status = response.status_code if response is not None else None
+            length = len(response.content) if response is not None else None
+            self.steps.append({"step": step, "status": status, "length": length})
+            line = {"step": step, "status": status,
+                    "location": location_path(response.headers.get("Location", "")) if response is not None else "",
+                    "length": length}
+            if failure is not None:
+                line["exception"] = failure
+            # JSON escapes control characters; one stderr line per HTTP step.
+            print(json.dumps(line, ensure_ascii=False), file=sys.stderr, flush=True)
+
+    @staticmethod
+    def nonce_response(response):
+        nonce = response.text.strip()
+        if not nonce or len(nonce) > 4096 or '<' in nonce or 300 <= response.status_code < 400:
+            raise RouterError("Beinir skilaði ekki gildu innskráningarmerki í skrefi nonce.")
+        return nonce
+
+    def login_response(self, response):
+        location = response.headers.get("Location", "")
+        try:
+            rejected = location and (urlparse(location).netloc not in ("", urlparse(self.host).netloc)
+                                     or re.search(r"login|error", location, re.I))
+        except ValueError:
+            rejected = True
+        if rejected or (300 <= response.status_code < 400 and not location):
+            raise RouterError(f"Óvænt tilvísun frá login.cgi í skrefi login: kóði {response.status_code}.")
+        if is_login_page(response.text):
+            raise RouterError("Innskráningarsíða kom aftur eftir innskráningu í skrefi login.")
+        self.logged_in = True
 
     def login(self):
         user = os.environ.get("ROUTER_USERNAME")
@@ -65,39 +133,36 @@ class RouterSession:
             raise RouterError("Innskráning var þegar reynd í þessu kalli.")
         # Submit(), ISNNOVAFTTR: fresh cookie jar, nonce POST, base64 (not SHA).
         self.http.cookies.clear()
-        nonce = self.request("POST", "/asp/GetRandCount.asp").text.strip()
-        if not nonce or len(nonce) > 4096 or '<' in nonce:
-            raise RouterError("Beinir skilaði ekki gildu innskráningarmerki.")
+        nonce = self.request("POST", "/asp/GetRandCount.asp", step="nonce", process=self.nonce_response)
         self.http.cookies.set("Cookie", "body:Language:english:id=-1", path="/")
         self.login_attempted = True  # Even a timeout may have created a session.
-        response = self.request("POST", "/login.cgi", data={
+        self.request("POST", "/login.cgi", step="login", process=self.login_response, data={
             "UserName": user, "PassWord": base64.b64encode(password.encode("utf-8")).decode("ascii"),
             "Language": "english", "x.X_HW_Token": nonce,
         })
-        location = response.headers.get("Location", "")
-        if (location and (urlparse(location).netloc not in ("", urlparse(self.host).netloc)
-                          or re.search(r"login|error", location, re.I))) or is_login_page(response.text):
-            raise RouterError("Innskráning mistókst. Athugaðu aðgang og hvort vefviðmótið sé í notkun.")
-        self.logged_in = True
     
-    def get(self, name: str) -> str:
+    def get(self, name: str, parsed=False, transform=None):
         if name not in PAGES:
             raise ValueError("Óþekkt síða.")
-        response = self.request("GET", PAGES[name])
-        if 300 <= response.status_code < 400 or is_login_page(response.text):
-            raise RouterError("Innskráning rann út eða var hafnað af beini.")
-        return response.text
+        def process(response):
+            if 300 <= response.status_code < 400:
+                raise RouterError(f"Tilvísun í skrefi page:{name}: kóði {response.status_code}.")
+            if is_login_page(response.text):
+                raise RouterError(f"Innskráningarsíða kom aftur eftir innskráningu í skrefi page:{name}.")
+            if transform is not None:
+                return transform(response.text)
+            return parse_page(response.text) if parsed else response.text
+        return self.request("GET", PAGES[name], step="page:" + name, process=process)
 
     def logout(self):
         if self.login_attempted:
             try:
                 # Huawei ONT web UI logout route; confirm on target firmware
                 # during owner's eventual live review (login HTML has no logout).
-                response = self.request("POST", "/logout.cgi?RequestFile=html/logout.html")
-                if 300 <= response.status_code < 400 and not re.search(r'login|logout', response.headers.get("Location", ""), re.I):
-                    raise RouterError("Útskráning mistókst. Athugaðu setu í vefviðmóti beinis.")
-            except Exception:
-                raise RouterError("Útskráning mistókst. Athugaðu setu í vefviðmóti beinis.") from None
+                def process(response):
+                    if 300 <= response.status_code < 400 and not re.search(r'login|logout', response.headers.get("Location", ""), re.I):
+                        raise RouterError(f"Óvænt tilvísun í skrefi logout: kóði {response.status_code}.")
+                self.request("POST", "/logout.cgi?RequestFile=html/logout.html", step="logout", process=process)
             finally:
                 self.logged_in = False
 
@@ -137,7 +202,7 @@ def authenticated(session_factory=None):
 def read_pages(*names: str) -> dict:
     try:
         with authenticated() as router:
-            return {name: parse_page(router.get(name)) for name in names}
+            return {name: router.get(name, parsed=True) for name in names}
     except Exception as exc:
         # Do not expose raw HTTP errors, credentials, pages, or session tokens.
         return {"error": "Ekki tókst að lesa beini. " + (
@@ -165,6 +230,23 @@ def mapped(page, schema):
 
 def first(page, *aliases):
     return next((value for row in rows(page) if (value := field(row, *aliases)) is not None), None)
+
+
+@mcp.tool()
+def router_diagnose() -> str:
+    """One login, deviceinfo read/parse and logout; return only step/status/byte lengths."""
+    steps = []
+    error = None
+    try:
+        with authenticated(lambda: RouterSession(steps=steps)) as router:
+            router.get("deviceinfo", parsed=True)
+    except Exception as exc:
+        error = str(exc) if isinstance(exc, RouterError) else "Ekki tókst að greina tengingu við beini."
+    # Construct output after finally so the logout step is included even on failure.
+    result = {"steps": steps}
+    if error is not None:
+        result["error"] = error
+    return output(result)
 
 
 @mcp.tool()
@@ -269,10 +351,11 @@ def router_dump_page(name: str) -> str:
         return output({"error": "Óþekkt síða."})
     try:
         with authenticated() as router:
-            source = redact_source(router.get(name))
+            source = router.get(name, transform=redact_source)
         return output({"page": name, "source": source})
-    except Exception:
-        return output({"error": "Ekki tókst að lesa eða afmá síðu beinis. Athugaðu tengingu og útskráningu."})
+    except Exception as exc:
+        return output({"error": str(exc) if isinstance(exc, RouterError) else
+                       "Ekki tókst að lesa eða afmá síðu beinis. Athugaðu tengingu og útskráningu."})
 
 
 if __name__ == "__main__":

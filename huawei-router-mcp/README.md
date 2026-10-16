@@ -17,6 +17,7 @@ run against the home router. No Phase 2 write tools are included.
 | `router_access_rules` | Precise access/MAC rules and DHCP reservations |
 | `router_logs(kind="firewall", limit=50)` | Firewall or user records; global limit 1–1000 across constructor groups |
 | `router_dump_page(name)` | Allowlisted page source, only with `ROUTER_DISCOVERY=1` |
+| `router_diagnose()` | One login, deviceinfo read/parse and logout; step names, HTTP codes and byte lengths only |
 
 The single generic parser reads `function Name(fields)` and `new Name(args)`;
 it decodes JS string escapes without evaluating JavaScript. Normalized fields
@@ -72,7 +73,8 @@ handler or authenticated status samples. Logout uses the Huawei ONT route
 `POST /logout.cgi?RequestFile=html/logout.html`, corroborated by an
 [independent ONT client](https://github.com/loiklo/huawei-onu-to-graphite/blob/main/huawei-onu-to-graphite-http.py).
 This is an inference for the V261a-20, not a firmware-specific confirmation.
-A failed logout returns a clear Icelandic error rather than a successful read.
+A failed logout is recorded in the safe stderr diagnostics but is non-fatal:
+it cannot replace a successful read or hide the original login/page error.
 Confirm that the owner's web UI is usable after a call during eventual live
 review. Exact status aliases, Wi-Fi band representations and all status/log
 constructor shapes also need real firmware samples. No live router test has
@@ -103,7 +105,8 @@ The Dockerfile uses `debian:trixie-slim`, `python3-venv`, pinned Python packages
 and mcp-proxy 0.13.0. Shell files are checked out with LF endings.
 
 Options: `host`, `username` (default `Useradmin`), `password` (password schema),
-`discovery` (default false). Port: `8095/tcp`. Boot: manual; architecture: amd64.
+`discovery` (default false). Internal port: `8095/tcp`, with no published host
+port. Boot: auto; architecture: amd64. The reviewed TCP watchdog stays enabled.
 The wrapper runs exactly:
 
 ```sh
@@ -122,3 +125,30 @@ docker build -t huawei-router-mcp:review addon/
 
 No installation, deployment, reboot, Wi-Fi change, parental-control change or
 device blocking was performed. Phase 2 requires a separate approved branch.
+
+## Safe live diagnostics (0.2.2)
+
+Each attempted HTTP step emits exactly one JSON line to stderr, after response
+validation/parsing. Fields are `step` (`nonce`, `login`, `page:<name>`, `logout`),
+`status`, `location` and `length` (response bytes). A failed step also includes
+`exception`, containing only its class name. No exception messages, tracebacks,
+request/response bodies, cookies, nonce, credentials or base64 credentials are
+logged. Status and length are `null` if no HTTP response was received.
+
+Location diagnostics omit authority, query and fragment. Only known static
+router paths are shown; other paths are `[redacted]` because a session secret
+could be embedded in the path itself. Redirects are still never followed.
+Existing successful same-router login redirects remain accepted; rejected login
+redirects now produce a specific Icelandic error with the login step and code.
+
+HTTP status failures, timeouts, SSL/connection errors, returned login pages and
+parser ValueErrors now return specific Icelandic errors. Parser errors identify
+the page, never the parser message or page source. Unexpected step failures
+also log only the exception class and return a fixed error naming the step.
+
+Call `router_diagnose()` to perform one login attempt, read and parse deviceinfo,
+and attempt logout. It returns `steps` with only `step`, `status`, `length`;
+it includes a safe top-level `error` if login/read fails. Logout is included even
+if login/read fails after login submission. Logout failures are logged and shown
+by their step metadata but remain non-fatal, preserving the reviewed behavior.
+No diagnostic requires discovery mode or returns parsed router data.

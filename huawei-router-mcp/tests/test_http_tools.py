@@ -73,12 +73,12 @@ class SessionTests(unittest.TestCase):
             self.assertTrue(http.request.call_args.args[1].endswith(LOGOUT))
             http.close.assert_called_once()
 
-    def test_logout_failure_is_reported_and_closed(self):
+    def test_logout_failure_is_nonfatal_and_closed(self):
         http = http_mock(response('nonce'),response(),response('function X(A){}new X(1)'),requests.Timeout('test-password'))
         with patch.object(server,'RouterSession',lambda: ORIGINAL_SESSION(http)):
             data = server.read_pages('devices')
-        self.assertIn('Útskráning',data['error'])
-        self.assertNotIn('test-password',data['error'])
+        self.assertNotIn('error',data)
+        self.assertNotIn('test-password',json.dumps(data))
         http.close.assert_called_once()
 
     def test_missing_credentials_no_network(self):
@@ -193,7 +193,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             async with ClientSession(read,write) as client:
                 await client.initialize()
                 tools = await client.list_tools()
-                self.assertEqual({t.name for t in tools.tools},{'router_status','router_devices','router_ports','router_wifi','router_parental','router_access_rules','router_logs','router_dump_page'})
+                self.assertEqual({t.name for t in tools.tools},{'router_status','router_devices','router_ports','router_wifi','router_parental','router_access_rules','router_logs','router_dump_page','router_diagnose'})
                 result = await client.call_tool('router_dump_page',{'name':'wlan'})
                 self.assertIn('óvirkur',result.content[0].text)
                 result = await client.call_tool('router_logs',{'kind':'invalid'})
