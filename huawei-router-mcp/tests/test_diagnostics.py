@@ -36,15 +36,15 @@ class DiagnosticsTests(unittest.TestCase):
         return result, lines, stderr.getvalue()
 
     def test_success_metadata_only_and_no_credentials(self):
-        secret = 'nonce-private-marker'
+        secret = 'NoncePrivateMarker'
         body = '<!-- test-user test-password -->function Info(Name){}new Info("private-body")'
         http = http_mock(response(secret), response(status=302, headers={
             'Location':'https://192.168.1.1/index.asp?nonce='+secret,
             'Set-Cookie':'session=private-cookie'}), response(body), response())
         result, lines, logs = self.diagnose(http)
         self.assertNotIn('error', result)
-        self.assertEqual([s['step'] for s in result['steps']], ['bootstrap','nonce','login','verify','page:deviceinfo','logout'])
-        self.assertEqual([s['status'] for s in result['steps']], [200,200,302,200,200,200])
+        self.assertEqual([s['step'] for s in result['steps']], ['bootstrap','nonce','login','verify','page:deviceinfo','logout_token','logout'])
+        self.assertEqual([s['status'] for s in result['steps']], [200,200,302,200,200,200,200])
         self.assertEqual(result['steps'][4]['length'],len(body.encode()))
         self.assertEqual(lines[2]['location'],'/index.asp')
         for value in (secret,'test-user','test-password','private-cookie','private-body',
@@ -109,7 +109,7 @@ class DiagnosticsTests(unittest.TestCase):
             http = http_mock(response('nonce'),failure,response())
             result, lines, logs = self.diagnose(http)
             self.assertIn(label,result['error'])
-            self.assertEqual([s['step'] for s in result['steps']],['bootstrap','nonce','login','logout'])
+            self.assertEqual([s['step'] for s in result['steps']],['bootstrap','nonce','login','logout_token','logout'])
             self.assertEqual(lines[2]['exception'],'RouterError')
             self.assertNotIn('private-secret',logs+json.dumps(result))
             self.assertEqual(sum(c.args[1].endswith('/login.cgi') for c in http.request.call_args_list),1)
@@ -128,7 +128,7 @@ class DiagnosticsTests(unittest.TestCase):
             result, lines, logs = self.diagnose(http)
         self.assertIn('þátta síðu deviceinfo',result['error'])
         self.assertEqual(lines[4]['exception'],'ValueError')
-        self.assertEqual(lines[5]['exception'],'HTTPError')
+        self.assertEqual(lines[6]['exception'],'HTTPError')
         self.assertNotIn('private-parser-secret', logs+json.dumps(result))
 
     def test_regular_tools_also_map_parser_errors(self):

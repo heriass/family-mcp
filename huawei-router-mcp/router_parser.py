@@ -85,7 +85,13 @@ def scrub_text(value):
     for name in ('ROUTER_USERNAME','ROUTER_PASSWORD'):
         secret = os.getenv(name)
         if secret:
-            for variant in (secret, base64.b64encode(secret.encode()).decode(), html.escape(secret)):
+            variants = [secret, base64.b64encode(secret.encode()).decode(), html.escape(secret)]
+            if name == 'ROUTER_PASSWORD':
+                try:
+                    variants.append(base64.b64encode(secret.encode('latin-1')).decode())
+                except UnicodeEncodeError:
+                    pass
+            for variant in variants:
                 value = value.replace(variant, '[redacted]')
     return re.sub(r'''(?i)\b([\w.$-]*(?:pass\w*|pwd|psk|key|token|secret|wpa|wep|csrf)[\w.$-]*\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;<>]+)''', r'\1[redacted]', value)
 

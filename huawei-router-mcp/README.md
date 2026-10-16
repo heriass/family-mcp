@@ -2,8 +2,8 @@
 
 Read-only FastMCP server for the Nova Iceland ISNNOVAFTTR router at
 `https://192.168.1.1`. The server uses stdio; the Home Assistant add-on wraps it
-with mcp-proxy on port 8095. Review branch only: nothing has been installed or
-run against the home router. No Phase 2 write tools are included.
+with mcp-proxy on port 8095. The owner is validating this branch on the real
+router; automated tests remain offline. No Phase 2 write tools are included.
 
 ## Tools
 
@@ -55,18 +55,27 @@ For ISNNOVAFTTR each call:
 1. Creates a fresh HTTP session and GETs `/`, retaining any bootstrap cookies.
 2. POSTs `/asp/GetRandCount.asp` with Referer `/`, Origin set to the router host,
    form Content-Type, and `X-Requested-With: XMLHttpRequest` (jQuery semantics).
+   Decodes raw response bytes with `utf-8-sig`, strips surrounding whitespace,
+   and requires an ASCII alphanumeric token (`[0-9A-Za-z]+`, up to 4096 chars).
 3. Sets the host-only cookie named `Cookie`, value `body:Language:english:id=-1`,
    path `/`, retaining all unrelated cookies from the first two responses.
 4. POSTs `/login.cgi` with `UserName`, base64 `PassWord`, `Language=english`, and
    `x.X_HW_Token` set to the returned nonce. No SHA transformation or login retry.
    Referer, Origin and form Content-Type match the browser form submission;
    the AJAX-only header is not added to this form POST.
+   Passwords entirely in U+0000..U+00FF use Latin-1 bytes before base64, matching
+   the page's per-character low-byte encoding. Outside this range the previous
+   UTF-8 fallback is retained. Both base64 variants are scrubbed from output.
 5. GETs the fixed same-origin `/index.asp` in a separate `verify` step. The login
    is not considered successful until this returns without an HTTP error,
    redirect or login page. Cookies set by login.cgi are retained for this GET.
 6. Reads only the requested allowlisted status pages, with Referer `/index.asp`.
 7. Attempts logout in `finally`, including failed/timed-out login submissions,
-   HTTP/parsing errors and discovery calls, then clears cookies and closes HTTP.
+   HTTP/parsing errors and discovery calls: POSTs
+   `/html/ssmp/common/GetRandToken.asp` in step `logout_token`, then POSTs
+   `/logout.cgi?RequestFile=html/logout.html` in step `logout` with form field
+   `x.X_HW_Token` set to that fresh token. The same BOM-aware decoding and
+   alphanumeric validation apply. Finally clears cookies and closes HTTP.
 
 Concurrent calls in one server process are serialized across the whole session.
 Do not run multiple copies against this single-session router. The owner's web UI
@@ -76,17 +85,15 @@ host. Login-page responses and login redirects are errors. HTTPS certificate
 verification is disabled for this local self-signed router, and ambient HTTP
 proxies are disabled. No request bodies, credentials or page sources are logged.
 
-**Hardware verification still required:** the supplied login HTML has no logout
-handler or authenticated status samples. Logout uses the Huawei ONT route
-`POST /logout.cgi?RequestFile=html/logout.html`, corroborated by an
-[independent ONT client](https://github.com/loiklo/huawei-onu-to-graphite/blob/main/huawei-onu-to-graphite-http.py).
-This is an inference for the V261a-20, not a firmware-specific confirmation.
+**Live observations:** the owner confirmed that token responses contain a UTF-8
+BOM plus a 64-character token, and that browser logout obtains a fresh token
+before submitting logout.cgi. Version 0.2.4 implements those observations.
 A failed logout is recorded in the safe stderr diagnostics but is non-fatal:
 it cannot replace a successful read or hide the original login/page error.
 Confirm that the owner's web UI is usable after a call during eventual live
 review. Exact status aliases, Wi-Fi band representations and all status/log
-constructor shapes also need real firmware samples. No live router test has
-been performed and no router credentials were requested or used.
+constructor shapes also need real firmware samples. This implementation's tests
+use mocks; no real router credentials were requested or used by the tests.
 
 ## Local verification
 
@@ -140,6 +147,8 @@ Each attempted HTTP step emits exactly one JSON line to stderr, after response
 validation/parsing. Fields are `step` (`nonce`, `login`, `page:<name>`, `logout`),
 `status`, `location` and `length` (response bytes). In 0.2.3 the sequence adds
 `bootstrap` (GET `/`) before nonce and `verify` (GET `/index.asp`) after login.
+Version 0.2.4 adds `logout_token` before `logout`; each produces its own metadata
+step and stderr line. Tokens and their encoded/decoded contents are never logged.
 A failed step also includes
 `exception`, containing only its class name. No exception messages, tracebacks,
 request/response bodies, cookies, nonce, credentials or base64 credentials are
@@ -166,3 +175,6 @@ it includes a safe top-level `error` if login/read fails. Logout is included eve
 if login/read fails after login submission. Logout failures are logged and shown
 by their step metadata but remain non-fatal, preserving the reviewed behavior.
 No diagnostic requires discovery mode or returns parsed router data.
+If logout token retrieval/validation fails, no invalid token is submitted to
+logout.cgi; the failed `logout_token` step is reported and cleanup remains
+non-fatal. Cookie clearing and HTTP close still run, without any login retry.

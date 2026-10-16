@@ -31,7 +31,7 @@ def response(text='', status=200, headers=None):
         result.cookies.set(name, cookie.value)
     return result
 
-def http_mock(*responses, bootstrap=None, verify=None):
+def http_mock(*responses, bootstrap=None, verify=None, logout_token=None):
     http = Mock()
     http.cookies = requests.cookies.RequestsCookieJar()
     # Navigation responses are separate so failure fixtures address named
@@ -42,6 +42,8 @@ def http_mock(*responses, bootstrap=None, verify=None):
             result = bootstrap if bootstrap is not None else response()
         elif method == 'GET' and url == HOST+'/index.asp':
             result = verify if verify is not None else response()
+        elif url == HOST+'/html/ssmp/common/GetRandToken.asp':
+            result = logout_token if logout_token is not None else response('logoutToken')
         else:
             result = next(pending)
         if isinstance(result, BaseException):
@@ -61,7 +63,8 @@ class SessionTests(unittest.TestCase):
         self.assertEqual([(c.args[0],c.args[1]) for c in calls], [
             ('GET',HOST+'/'),('POST',HOST+'/asp/GetRandCount.asp'),('POST',HOST+'/login.cgi'),
             ('GET',HOST+'/index.asp'),
-            ('GET',HOST+server.PAGES['deviceinfo']),('POST',HOST+LOGOUT)])
+            ('GET',HOST+server.PAGES['deviceinfo']),
+            ('POST',HOST+'/html/ssmp/common/GetRandToken.asp'),('POST',HOST+LOGOUT)])
         self.assertEqual(calls[2].kwargs['data'],{'UserName':'test-user','PassWord':base64.b64encode(b'test-password').decode(),'Language':'english','x.X_HW_Token':'nonce'})
         self.assertEqual(len(http.cookies),0)
         for call in calls:
@@ -88,7 +91,7 @@ class SessionTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 with server.authenticated(lambda: server.RouterSession(http)):
                     self.fail('Must not read after failed login')
-            self.assertEqual(http.request.call_count,4)
+            self.assertEqual(http.request.call_count,5)
             self.assertTrue(http.request.call_args.args[1].endswith(LOGOUT))
             http.close.assert_called_once()
 
@@ -143,6 +146,7 @@ class ToolTests(unittest.TestCase):
             # Make the mock return a page for every read and a successful logout.
             def request(method,url,**kwargs):
                 if url.endswith('GetRandCount.asp'): return response('nonce')
+                if url.endswith('GetRandToken.asp'): return response('logoutToken')
                 if method == 'GET': return response('function X(Name,Password){}new X("ok","hidden")')
                 return response()
             http.request.side_effect = request

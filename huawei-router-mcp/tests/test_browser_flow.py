@@ -20,14 +20,21 @@ import server
 from test_http_tools import ENV, HOST, LOGOUT, ORIGINAL_SESSION
 
 
+LOGIN_TOKEN = "Ab12"*16
+LOGOUT_TOKEN = "Cd34"*16
+LOGOUT_TOKEN_PATH = "/html/ssmp/common/GetRandToken.asp"
+
+
 class BrowserAdapter(BaseAdapter):
-    def __init__(self, *, verify_status=200, verify_body='<html>Router index</html>', page_status=200, fail=None):
+    def __init__(self, *, verify_status=200, verify_body='<html>Router index</html>', page_status=200, fail=None, login_token=None, logout_token=None):
         self.sent = []
         self.closed = False
         self.verify_status = verify_status
         self.verify_body = verify_body
         self.page_status = page_status
         self.fail = fail
+        self.login_token = b'\xef\xbb\xbf' + LOGIN_TOKEN.encode() if login_token is None else login_token
+        self.logout_token = b'\xef\xbb\xbf' + LOGOUT_TOKEN.encode() if logout_token is None else logout_token
 
     def send(self, request, **kwargs):
         self.sent.append(request)
@@ -39,7 +46,7 @@ class BrowserAdapter(BaseAdapter):
             body = '<input id="txt_Username">'
             cookies = ['BootSession=bootstrap-private; Path=/; HttpOnly']
         elif path == '/asp/GetRandCount.asp':
-            body = 'nonce-private'
+            body = self.login_token
             cookies = ['NonceSession=nonce-cookie-private; Path=/']
         elif path == '/login.cgi':
             # A generic 200 login response is not authentication proof.
@@ -49,14 +56,16 @@ class BrowserAdapter(BaseAdapter):
             status, body = self.verify_status, self.verify_body
         elif path == server.PAGES['deviceinfo']:
             status, body = self.page_status, 'function Info(ModelName){}new Info("V261a-20")'
+        elif path == LOGOUT_TOKEN_PATH:
+            body = self.logout_token
         elif path != '/logout.cgi':
             raise AssertionError('Unexpected request')
         result = requests.Response()
         result.status_code = status
         result.url = request.url
         result.request = request
-        result._content = body.encode()
-        result.encoding = 'utf-8'
+        result._content = body if isinstance(body,bytes) else body.encode()
+        result.encoding = 'iso-8859-1'  # Simulate the charset that caused BOM mojibake.
         msg = Message()
         for cookie in cookies:
             msg.add_header('Set-Cookie',cookie)
@@ -88,9 +97,9 @@ class BrowserFlowTests(unittest.TestCase):
         self.assertNotIn('error',result)
         self.assertEqual([(r.method, urlparse(r.url).path) for r in adapter.sent], [
             ('GET','/'),('POST','/asp/GetRandCount.asp'),('POST','/login.cgi'),
-            ('GET','/index.asp'),('GET',server.PAGES['deviceinfo']),('POST','/logout.cgi')])
+            ('GET','/index.asp'),('GET',server.PAGES['deviceinfo']),('POST',LOGOUT_TOKEN_PATH),('POST','/logout.cgi')])
         self.assertEqual([s['step'] for s in result['steps']],
-                         ['bootstrap','nonce','login','verify','page:deviceinfo','logout'])
+                         ['bootstrap','nonce','login','verify','page:deviceinfo','logout_token','logout'])
         nonce, login, verify, page = adapter.sent[1:5]
         for request in (nonce, login):
             self.assertEqual(request.headers['Origin'],HOST)
@@ -107,11 +116,21 @@ class BrowserFlowTests(unittest.TestCase):
         self.assertEqual(login.headers['Cookie'].count('Cookie=body:Language:english:id=-1'),1)
         self.assertIn('SessionID=auth-private',verify.headers['Cookie'])
         self.assertIn('SessionToken=token-private',page.headers['Cookie'])
-        self.assertEqual(parse_qs(login.body)['x.X_HW_Token'],['nonce-private'])
+        self.assertEqual(parse_qs(login.body)['x.X_HW_Token'],[LOGIN_TOKEN])
+        logout_token_request, logout = adapter.sent[-2:]
+        self.assertEqual(urlparse(logout.url).query,'RequestFile=html/logout.html')
+        self.assertEqual(parse_qs(logout.body),{'x.X_HW_Token':[LOGOUT_TOKEN]})
+        self.assertNotIn(LOGIN_TOKEN,logout.body)
+        for request in (logout_token_request,logout):
+            self.assertEqual(request.headers['Referer'],HOST+'/index.asp')
+            self.assertEqual(request.headers['Origin'],HOST)
+            self.assertEqual(request.headers['Content-Type'],'application/x-www-form-urlencoded')
+        self.assertEqual(result['steps'][1]['length'],67)
+        self.assertEqual(result['steps'][-2]['length'],67)
         self.assertEqual(result['steps'][2]['set_cookie_names'],['SessionID','SessionToken'])
         for line in map(json.loads,logs.splitlines()):
             self.assertNotIn('set_cookie_names',line)
-        for secret in ('bootstrap-private','nonce-private','nonce-cookie-private','auth-private','token-private',
+        for secret in (LOGIN_TOKEN,LOGOUT_TOKEN,'bootstrap-private','nonce-private','nonce-cookie-private','auth-private','token-private',
                        'test-user','test-password','dGVzdC1wYXNzd29yZA==','generic-login-response'):
             self.assertNotIn(secret,logs+json.dumps(result))
 
@@ -132,7 +151,7 @@ class BrowserFlowTests(unittest.TestCase):
             adapter = BrowserAdapter(**kwargs)
             result, logs = self.diagnose(adapter)
             self.assertIn('verify',result['error'])
-            self.assertEqual([s['step'] for s in result['steps']],['bootstrap','nonce','login','verify','logout'])
+            self.assertEqual([s['step'] for s in result['steps']],['bootstrap','nonce','login','verify','logout_token','logout'])
             self.assertEqual(sum(urlparse(r.url).path == '/login.cgi' for r in adapter.sent),1)
             self.assertEqual(urlparse(adapter.sent[-1].url).path,'/logout.cgi')
             self.assertNotIn('private-error',logs+json.dumps(result))
@@ -141,7 +160,7 @@ class BrowserFlowTests(unittest.TestCase):
         adapter = BrowserAdapter(page_status=403)
         result, _ = self.diagnose(adapter)
         self.assertIn('page:deviceinfo',result['error'])
-        self.assertEqual(result['steps'][-2]['status'],403)
+        self.assertEqual(result['steps'][-3]['status'],403)
         self.assertEqual(result['steps'][-1]['step'],'logout')
 
     def test_bootstrap_failure_never_submits_credentials(self):
@@ -151,3 +170,38 @@ class BrowserFlowTests(unittest.TestCase):
         self.assertIn('SSL-villa',result['error'])
         self.assertEqual(len(adapter.sent),1)
         self.assertNotIn('private-error',logs)
+
+    def test_invalid_nonce_prevents_login_without_exposing_value(self):
+        adapter = BrowserAdapter(login_token=b'\xef\xbb\xbfInvalid-Private-Token')
+        result, logs = self.diagnose(adapter)
+        self.assertIn('nonce',result['error'])
+        self.assertEqual([s['step'] for s in result['steps']],['bootstrap','nonce'])
+        self.assertNotIn('Invalid-Private-Token',logs+json.dumps(result))
+        self.assertFalse(any(urlparse(r.url).path == '/login.cgi' for r in adapter.sent))
+
+    def test_logout_token_failure_is_nonfatal_without_invalid_logout_post(self):
+        for kwargs in ({'logout_token':b'bad-token'}, {'logout_token':b'\xffprivate'},
+                       {'fail':(LOGOUT_TOKEN_PATH, requests.Timeout('private-error'))}):
+            adapter = BrowserAdapter(**kwargs)
+            result, logs = self.diagnose(adapter)
+            self.assertNotIn('error',result)
+            self.assertEqual(result['steps'][-1]['step'],'logout_token')
+            self.assertFalse(any(urlparse(r.url).path == '/logout.cgi' for r in adapter.sent))
+            self.assertEqual(sum(urlparse(r.url).path == '/login.cgi' for r in adapter.sent),1)
+            self.assertIn('exception',json.loads(logs.splitlines()[-1]))
+            self.assertNotIn('private',logs+json.dumps(result))
+
+    def test_page_error_preserved_if_logout_token_request_fails(self):
+        adapter = BrowserAdapter(page_status=403, fail=(LOGOUT_TOKEN_PATH,requests.Timeout('private-error')))
+        result, _ = self.diagnose(adapter)
+        self.assertIn('page:deviceinfo',result['error'])
+        self.assertIn('403',result['error'])
+        self.assertEqual(result['steps'][-1]['step'],'logout_token')
+
+    def test_latin1_password_in_prepared_login_form(self):
+        with patch.dict(os.environ,{'ROUTER_PASSWORD':'Pássÿ'}):
+            adapter = BrowserAdapter()
+            result, logs = self.diagnose(adapter)
+        self.assertNotIn('error',result)
+        self.assertEqual(parse_qs(adapter.sent[2].body)['PassWord'],['UOFzc/8='])
+        self.assertNotIn('UOFzc/8=',logs+json.dumps(result))

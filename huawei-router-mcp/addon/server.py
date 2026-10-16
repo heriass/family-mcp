@@ -110,11 +110,29 @@ class RouterSession:
             print(json.dumps(line, ensure_ascii=False), file=sys.stderr, flush=True)
 
     @staticmethod
-    def nonce_response(response):
-        nonce = response.text.strip()
-        if not nonce or len(nonce) > 4096 or '<' in nonce or 300 <= response.status_code < 400:
-            raise RouterError("Beinir skilaði ekki gildu innskráningarmerki í skrefi nonce.")
-        return nonce
+    def token_response(response, step):
+        # XHR removes the UTF-8 BOM; Response.text can instead decode it as
+        # Latin-1 mojibake. Ignore the HTTP charset and decode the raw bytes.
+        try:
+            token = response.content.decode("utf-8-sig").strip()
+        except UnicodeDecodeError:
+            raise RouterError(f"Beinir skilaði ekki gildu innskráningarmerki í skrefi {step}.") from None
+        if len(token) > 4096 or re.fullmatch(r"[0-9A-Za-z]+", token) is None or 300 <= response.status_code < 400:
+            raise RouterError(f"Beinir skilaði ekki gildu innskráningarmerki í skrefi {step}.")
+        return token
+
+    def nonce_response(self, response):
+        return self.token_response(response, "nonce")
+
+    @staticmethod
+    def encoded_password(password):
+        # The page's base64encode() uses each char's low byte. Latin-1 matches
+        # exactly for U+0000..U+00FF; keep the prior fallback outside that range.
+        try:
+            raw = password.encode("latin-1")
+        except UnicodeEncodeError:
+            raw = password.encode("utf-8")
+        return base64.b64encode(raw).decode("ascii")
 
     def login_response(self, response):
         location = response.headers.get("Location", "")
@@ -156,7 +174,7 @@ class RouterSession:
         self.http.cookies.set_cookie(language_cookie)
         self.login_attempted = True  # Even a timeout may have created a session.
         self.request("POST", "/login.cgi", step="login", process=self.login_response, headers=form_headers, data={
-            "UserName": user, "PassWord": base64.b64encode(password.encode("utf-8")).decode("ascii"),
+            "UserName": user, "PassWord": self.encoded_password(password),
             "Language": "english", "x.X_HW_Token": nonce,
         })
         # A 200 login.cgi response alone does not establish authentication.
@@ -181,12 +199,17 @@ class RouterSession:
     def logout(self):
         if self.login_attempted:
             try:
-                # Huawei ONT web UI logout route; confirm on target firmware
-                # during owner's eventual live review (login HTML has no logout).
+                # Confirmed browser flow: obtain a fresh token before logout.
+                form_headers = {"Referer": self.host + "/index.asp", "Origin": self.host,
+                                "Content-Type": "application/x-www-form-urlencoded"}
+                token = self.request("POST", "/html/ssmp/common/GetRandToken.asp", step="logout_token",
+                                     process=lambda r: self.token_response(r, "logout_token"),
+                                     headers={**form_headers, "X-Requested-With": "XMLHttpRequest"}, data={})
                 def process(response):
                     if 300 <= response.status_code < 400 and not re.search(r'login|logout', response.headers.get("Location", ""), re.I):
                         raise RouterError(f"Óvænt tilvísun í skrefi logout: kóði {response.status_code}.")
-                self.request("POST", "/logout.cgi?RequestFile=html/logout.html", step="logout", process=process)
+                self.request("POST", "/logout.cgi?RequestFile=html/logout.html", step="logout", process=process,
+                             headers=form_headers, data={"x.X_HW_Token": token})
             finally:
                 self.logged_in = False
 
