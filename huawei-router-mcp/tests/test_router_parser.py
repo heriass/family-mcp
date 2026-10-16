@@ -1,4 +1,7 @@
 import unittest
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from router_parser import parse_constructors, sanitize, bounded, redact_source
 
 class ParserTests(unittest.TestCase):
@@ -26,9 +29,35 @@ class ParserTests(unittest.TestCase):
     def test_bounded(self):
         assert "of stór" in bounded({"long":"a"*60_000})
 
-    def test_raw_source_fails_closed(self):
-        with self.assertRaises(RuntimeError):
-            redact_source("<script>var unknownSecret='abc'</script>")
+    def test_source_redaction(self):
+        source = r'''<input name="onttoken" value="hidden1"><div>hidden2</div>
+        <!-- hidden3 --><script>var secret='hidden4'; var x="\x68idden5";
+        function X(Name,Password){} new X('name','hidden6');
+        Form.setAction('/login.cgi'); var csrf=123456;</script>'''
+        result = redact_source(source)
+        for value in ('hidden1','hidden2','hidden3','hidden4','hidden5','hidden6','123456'):
+            self.assertNotIn(value,result)
+        self.assertIn('/login.cgi',result)
+        self.assertIn('function X(Name,Password)',result)
+        self.assertIn('[redacted]',result)
+
+    def test_unsupported_discovery_literals(self):
+        for source in ('<script>var token=`hidden`;</script>', '<script>var x=/hidden/;</script>'):
+            self.assertNotIn('hidden',redact_source(source))
+
+    def test_escape_decoded_once(self):
+        source = r'''function X(A,B,C){} new X("\\x41","\u00e9","\uD83D\uDE00")'''
+        self.assertEqual(parse_constructors(source)['X'][0], {'A':r'\x41','B':'é','C':'😀'})
+
+    def test_nonexecuting_and_opaque_strings(self):
+        source = '''function X(A,B){} // new X("bad", "bad")
+        var text="new X('bad','bad')"; /* new X('bad','bad') */
+        new X(dangerous("secret"),[1,2]); new X(0x10,1.2e3);'''
+        self.assertEqual(parse_constructors(source)['X'],[{'A':None,'B':None},{'A':16,'B':1200.0}])
+
+    def test_nested_filter_and_quoted_log_value(self):
+        value = {'nested':[{'csrf':'x','Message':'password="long secret" other=ok'}]}
+        self.assertEqual(sanitize(value),{'nested':[{'Message':'password=[redacted] other=ok'}]})
 
 if __name__ == "__main__":
     unittest.main()

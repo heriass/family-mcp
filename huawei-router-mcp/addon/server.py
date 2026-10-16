@@ -1,0 +1,275 @@
+"""Read-only Huawei V261a-20 MCP; one short-lived session per call."""
+from __future__ import annotations
+
+import os
+import re
+import base64
+import threading
+from contextlib import contextmanager
+from urllib.parse import urlparse
+
+import requests
+from mcp.server.fastmcp import FastMCP
+from router_parser import parse_constructors as parse_page, sanitize, bounded as output, redact_source
+
+mcp = FastMCP("huawei-router")
+PAGES = {
+    "deviceinfo": "/html/ssmp/deviceinfo/deviceinfo.asp",
+    "wan": "/html/bbsp/common/getWanDynamicData.asp",
+    "wanlist": "/html/bbsp/common/wan_list.asp",
+    "eth": "/html/amp/ethinfo/ethinfo.asp",
+    "devices": "/html/bbsp/common/GetLanUserDevInfo.asp",
+    "dhcpstatic": "/html/bbsp/dhcpstatic/dhcpstatic.asp",
+    "wlan": "/html/amp/wlanbasic/WlanBasic.asp",
+    "guest": "/html/amp/wlanbasic/WlanGuestWifiConfig.asp",
+    "parental": "/html/bbsp/parentalctrl/parentalctrlstatus.asp",
+    "portacl": "/html/bbsp/portacl/newacl.asp",
+    "fwlog": "/html/bbsp/firewalllog/firewalllogview.asp",
+    "userlog": "/html/ssmp/userlog/normallogview.asp",
+    "reboot": "/html/ssmp/reboot/reboot.asp",
+}
+def router_host() -> str:
+    host = os.getenv("ROUTER_HOST", "https://192.168.1.1").rstrip("/")
+    parsed = urlparse(host)
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path or not parsed.hostname:
+        raise ValueError("Ógilt ROUTER_HOST: aðeins https://host[:port] er leyft.")
+    return host
+
+
+class RouterError(RuntimeError):
+    """Only fixed Icelandic messages may cross the tool boundary."""
+
+
+class RouterSession:
+    def __init__(self, http=None):
+        self.http = http or requests.Session()
+        self.host = router_host()
+        self.http.verify = False  # V261a-20 local, self-signed TLS; review before deployment.
+        self.http.trust_env = False  # No ambient proxy credentials.
+        self.logged_in = False
+        self.login_attempted = False
+
+    def request(self, method, path, **kwargs):
+        # Never follow redirects to another host or forward credentials there.
+        response = self.http.request(method, self.host + path, timeout=10,
+                                     allow_redirects=False, **kwargs)
+        response.raise_for_status()
+        return response
+
+    def login(self):
+        user = os.environ.get("ROUTER_USERNAME")
+        password = os.environ.get("ROUTER_PASSWORD")
+        if not user or not password:
+            raise RouterError("Notandanafn eða lykilorð vantar í viðbótarstillingar.")
+        if self.login_attempted:
+            raise RouterError("Innskráning var þegar reynd í þessu kalli.")
+        # Submit(), ISNNOVAFTTR: fresh cookie jar, nonce POST, base64 (not SHA).
+        self.http.cookies.clear()
+        nonce = self.request("POST", "/asp/GetRandCount.asp").text.strip()
+        if not nonce or len(nonce) > 4096 or '<' in nonce:
+            raise RouterError("Beinir skilaði ekki gildu innskráningarmerki.")
+        self.http.cookies.set("Cookie", "body:Language:english:id=-1", path="/")
+        self.login_attempted = True  # Even a timeout may have created a session.
+        response = self.request("POST", "/login.cgi", data={
+            "UserName": user, "PassWord": base64.b64encode(password.encode("utf-8")).decode("ascii"),
+            "Language": "english", "x.X_HW_Token": nonce,
+        })
+        location = response.headers.get("Location", "")
+        if (location and (urlparse(location).netloc not in ("", urlparse(self.host).netloc)
+                          or re.search(r"login|error", location, re.I))) or is_login_page(response.text):
+            raise RouterError("Innskráning mistókst. Athugaðu aðgang og hvort vefviðmótið sé í notkun.")
+        self.logged_in = True
+    
+    def get(self, name: str) -> str:
+        if name not in PAGES:
+            raise ValueError("Óþekkt síða.")
+        response = self.request("GET", PAGES[name])
+        if 300 <= response.status_code < 400 or is_login_page(response.text):
+            raise RouterError("Innskráning rann út eða var hafnað af beini.")
+        return response.text
+
+    def logout(self):
+        if self.login_attempted:
+            try:
+                # Huawei ONT web UI logout route; confirm on target firmware
+                # during owner's eventual live review (login HTML has no logout).
+                response = self.request("POST", "/logout.cgi?RequestFile=html/logout.html")
+                if 300 <= response.status_code < 400 and not re.search(r'login|logout', response.headers.get("Location", ""), re.I):
+                    raise RouterError("Útskráning mistókst. Athugaðu setu í vefviðmóti beinis.")
+            except Exception:
+                raise RouterError("Útskráning mistókst. Athugaðu setu í vefviðmóti beinis.") from None
+            finally:
+                self.logged_in = False
+
+    def close(self):
+        try:
+            self.http.cookies.clear()
+        finally:
+            self.http.close()
+
+
+SESSION_LOCK = threading.Lock()
+
+
+def is_login_page(text):
+    return bool(re.search(r'txt_Username|txt_Password|function\s+LoginSubmit|name=[\"\x27]PassWord|location\s*(?:\.href\s*)?=\s*[\"\x27]/?login\.asp', text, re.I))
+
+
+@contextmanager
+def authenticated(session_factory=None):
+    # FastMCP dispatches synchronous tools in worker threads.
+    with SESSION_LOCK:
+        router = (session_factory or RouterSession)()
+        try:
+            router.login()  # exactly one attempt, no automatic HTTP retries
+            yield router
+        finally:
+            try:
+                router.logout()
+            finally:
+                router.close()
+
+
+def read_pages(*names: str) -> dict:
+    try:
+        with authenticated() as router:
+            return {name: parse_page(router.get(name)) for name in names}
+    except Exception as exc:
+        # Do not expose raw HTTP errors, credentials, pages, or session tokens.
+        return {"error": "Ekki tókst að lesa beini. " + (
+            str(exc) if isinstance(exc, RouterError) else "Athugaðu tengingu og innskráningu."
+        )}
+
+
+def rows(page):
+    return [row for records in page.values() for row in records]
+
+
+def field(row, *names):
+    lookup = {re.sub(r'[^a-z0-9]', '', k.lower()): v for k, v in row.items()}
+    for name in names:
+        value = lookup.get(re.sub(r'[^a-z0-9]', '', name.lower()))
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def mapped(page, schema):
+    return [{**{key: field(row, *aliases) for key, aliases in schema.items()},
+             "details": sanitize(row)} for row in rows(page)]
+
+
+def first(page, *aliases):
+    return next((value for row in rows(page) if (value := field(row, *aliases)) is not None), None)
+
+
+@mcp.tool()
+def router_status() -> str:
+    """Model, firmware, uptime, WAN state/address and counters where published."""
+    data = read_pages("deviceinfo", "wan", "wanlist")
+    if "error" in data:
+        return output(data)
+    return output({"model": first(data["deviceinfo"], "ModelName", "Model", "ProductClass"),
+                   "firmware": first(data["deviceinfo"], "SoftwareVersion", "FirmwareVersion"),
+                   "uptime": first(data["deviceinfo"], "UpTime", "SystemUpTime"),
+                   "wan": mapped({**{"wanlist."+k:v for k,v in data["wanlist"].items()},
+                                  **{"wan."+k:v for k,v in data["wan"].items()}}, {
+                       "state": ("ConnectionStatus", "Status", "WanStatus"),
+                       "ip": ("ExternalIPAddress", "IPAddress", "IPv4Address"),
+                       "uptime": ("Uptime", "ConnectionUptime"),
+                       "bytes_sent": ("TotalBytesSent", "BytesSent"),
+                       "bytes_received": ("TotalBytesReceived", "BytesReceived"),
+                   }), "details": data})
+
+
+@mcp.tool()
+def router_devices(name_filter: str = "") -> str:
+    """LAN/Wi-Fi clients, online first; optional device name filter."""
+    result = read_pages("devices")
+    if "error" in result:
+        return output(result)
+    devices = mapped(result["devices"], {
+        "name": ("HostName", "Name", "DeviceName"), "ip": ("IpAddr", "IPAddress"),
+        "mac": ("MacAddr", "MACAddress"), "port": ("Port", "PortName", "Interface"),
+        "band": ("Band", "FrequencyBand", "RadioBand"), "port_type": ("PortType",),
+        "status": ("DevStatus", "Status", "Active"), "connected_time": ("Time", "ConnectedTime", "Uptime"),
+    })
+    devices = [d for d in devices if name_filter.casefold() in str(d["name"] or "").casefold()]
+    for device in devices:
+        status = str(device["status"]).lower()
+        device["online"] = True if status in ("1", "true", "online", "up", "active") else False if status in ("0", "false", "offline", "down", "inactive") else None
+    devices.sort(key=lambda d: d["online"] is not True)
+    return output({"devices": devices})
+
+
+@mcp.tool()
+def router_ports() -> str:
+    """Ethernet link/speed and traffic counters."""
+    data = read_pages("eth")
+    return output(data if "error" in data else {"ports": mapped(data["eth"], {
+        "port": ("Name", "Port", "PortId", "InterfaceID"), "link": ("Status", "LinkStatus", "Link"),
+        "speed": ("Speed", "MaxBitRate", "ActualBitRate"),
+        "bytes_sent": ("BytesSent", "TxBytes", "SendBytes"),
+        "bytes_received": ("BytesReceived", "RxBytes", "ReceiveBytes"),
+        "packets_sent": ("PacketsSent", "TxPackets"), "packets_received": ("PacketsReceived", "RxPackets"),
+    })})
+
+
+@mcp.tool()
+def router_wifi() -> str:
+    """Primary/guest Wi-Fi configuration (all secret-key fields removed)."""
+    data = read_pages("wlan", "guest")
+    if "error" in data:
+        return output(data)
+    schema = {"enabled": ("Enable", "Enabled", "RadioEnabled"), "ssid": ("SSID", "SSIDName"),
+              "band": ("Band", "FrequencyBand", "OperatingFrequencyBand"),
+              "security": ("BeaconType", "AuthenticationMode", "AuthMode", "SecurityMode")}
+    return output({"wifi": mapped(data["wlan"], schema), "guest": mapped(data["guest"], schema)})
+
+
+@mcp.tool()
+def router_parental() -> str:
+    """Read parental-control rules/schedules."""
+    return output(read_pages("parental"))
+
+
+@mcp.tool()
+def router_access_rules() -> str:
+    """Read precise-device-access rules and DHCP reservations."""
+    return output(read_pages("portacl", "dhcpstatic"))
+
+
+@mcp.tool()
+def router_logs(kind: str = "firewall", limit: int = 50) -> str:
+    """Read firewall/user logs; default 50, maximum 1000 entries across all groups."""
+    if kind not in ("firewall", "user"):
+        return output({"error": "Veldu kind=firewall eða kind=user."})
+    if limit < 1 or limit > 1000:
+        return output({"error": "limit verður að vera á bilinu 1–1000."})
+    page = "fwlog" if kind == "firewall" else "userlog"
+    data = read_pages(page)
+    if "error" not in data:
+        remaining = limit
+        for records in data[page].values():
+            del records[remaining:]
+            remaining -= len(records)
+    return output(data)
+
+
+@mcp.tool()
+def router_dump_page(name: str) -> str:
+    """Discovery only: redacted HTML/JavaScript source from an allowlisted page."""
+    if os.getenv("ROUTER_DISCOVERY") != "1":
+        return output({"error": "Uppgötvunarhamur er óvirkur."})
+    if name not in PAGES:
+        return output({"error": "Óþekkt síða."})
+    try:
+        with authenticated() as router:
+            source = redact_source(router.get(name))
+        return output({"page": name, "source": source})
+    except Exception:
+        return output({"error": "Ekki tókst að lesa eða afmá síðu beinis. Athugaðu tengingu og útskráningu."})
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

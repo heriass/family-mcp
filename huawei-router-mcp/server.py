@@ -1,15 +1,16 @@
-"""Read-only Huawei router MCP server. Authentication intentionally fails closed pending verified login JS."""
+"""Read-only Huawei V261a-20 MCP; one short-lived session per call."""
 from __future__ import annotations
 
-import json
 import os
 import re
+import base64
+import threading
 from contextlib import contextmanager
-from functools import wraps
 from urllib.parse import urlparse
 
 import requests
 from mcp.server.fastmcp import FastMCP
+from router_parser import parse_constructors as parse_page, sanitize, bounded as output, redact_source
 
 mcp = FastMCP("huawei-router")
 PAGES = {
@@ -27,107 +28,16 @@ PAGES = {
     "userlog": "/html/ssmp/userlog/normallogview.asp",
     "reboot": "/html/ssmp/reboot/reboot.asp",
 }
-SENSITIVE = re.compile(r"pass|pwd|psk|key|token|secret|wpa|wep", re.I)
-LIMIT = 60000
-FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^()]*)\)")
-CONSTRUCTOR = re.compile(r"\bnew\s+([A-Za-z_$][\w$]*)\s*\(")
-
-
-def js_arguments(source: str, start: int) -> tuple[list[object], int]:
-    """Read JS constructor arguments without eval; supports quoted strings and numeric literals."""
-    parts, buf, quote, escape, depth = [], [], None, False, 0
-    i = start
-    while i < len(source):
-        c = source[i]
-        if quote:
-            buf.append(c)
-            if escape:
-                escape = False
-            elif c == "\\":
-                escape = True
-            elif c == quote:
-                quote = None
-        elif c in "'\"":
-            quote = c
-            buf.append(c)
-        elif c == "(":
-            depth += 1
-            buf.append(c)
-        elif c == ")":
-            if depth:
-                depth -= 1
-                buf.append(c)
-            else:
-                if buf or parts:
-                    parts.append("".join(buf).strip())
-                return [decode_literal(p) for p in parts], i + 1
-        elif c == "," and depth == 0:
-            parts.append("".join(buf).strip())
-            buf = []
-        else:
-            buf.append(c)
-        i += 1
-    raise ValueError("Ólokið JavaScript-fall í svari beinis.")
-
-
-def decode_literal(value: str) -> object:
-    if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
-        s = value[1:-1]
-        def escape(match: re.Match) -> str:
-            v = match.group(1)
-            return chr(int(v[1:], 16)) if v.startswith(("x", "u")) else {
-                "n": "\n", "r": "\r", "t": "\t", "\\": "\\", "'": "'", '"': '"'
-            }.get(v, v)
-        return re.sub(r"\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|.)", escape, s)
-    if value == "null" or value == "undefined":
-        return None
-    if value in ("true", "false"):
-        return value == "true"
-    if re.fullmatch(r"-?\d+(?:\.\d+)?", value):
-        return float(value) if "." in value else int(value)
-    # Never evaluate expressions or expose their raw text (may contain secrets).
-    return None
-
-
-def parse_page(html: str) -> dict[str, list[dict]]:
-    fields = {}
-    for match in FUNCTION.finditer(html):
-        names = [s.strip() for s in match.group(2).split(",")]
-        if names and all(re.fullmatch(r"[A-Za-z_$][\w$]*", s) for s in names):
-            fields[match.group(1)] = names
-    objects: dict[str, list[dict]] = {}
-    for match in CONSTRUCTOR.finditer(html):
-        name = match.group(1)
-        if name not in fields:
-            continue
-        values, _ = js_arguments(html, match.end())
-        objects.setdefault(name, []).append(dict(zip(fields[name], values)))
-    return objects
-
-
-def sanitize(value: object) -> object:
-    if isinstance(value, dict):
-        return {str(k): sanitize(v) for k, v in value.items() if not SENSITIVE.search(str(k))}
-    if isinstance(value, list):
-        return [sanitize(v) for v in value]
-    if isinstance(value, str):
-        # Never surface credential-looking values accidentally embedded in strings.
-        value = re.sub(r"(?i)\b((?:password|passwd|pwd|psk|token|secret|wpa|wep|(?:private|api)[_-]?key)\s*[:=]\s*)[^\s,;\"'<]+", r"\1[redacted]", value)
-        return value
-    return value
-
-
-def output(value: object) -> str:
-    result = json.dumps(sanitize(value), ensure_ascii=False, separators=(",", ":"))
-    return result if len(result) <= LIMIT else json.dumps({"error": "Svarið er of stórt (60.000 stafir). Notaðu síu eða lægri mörk."}, ensure_ascii=False)
-
-
 def router_host() -> str:
     host = os.getenv("ROUTER_HOST", "https://192.168.1.1").rstrip("/")
     parsed = urlparse(host)
-    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path:
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path or not parsed.hostname:
         raise ValueError("Ógilt ROUTER_HOST: aðeins https://host[:port] er leyft.")
     return host
+
+
+class RouterError(RuntimeError):
+    """Only fixed Icelandic messages may cross the tool boundary."""
 
 
 class RouterSession:
@@ -137,43 +47,87 @@ class RouterSession:
         self.http.verify = False  # V261a-20 local, self-signed TLS; review before deployment.
         self.http.trust_env = False  # No ambient proxy credentials.
         self.logged_in = False
+        self.login_attempted = False
+
+    def request(self, method, path, **kwargs):
+        # Never follow redirects to another host or forward credentials there.
+        response = self.http.request(method, self.host + path, timeout=10,
+                                     allow_redirects=False, **kwargs)
+        response.raise_for_status()
+        return response
 
     def login(self):
         user = os.environ.get("ROUTER_USERNAME")
         password = os.environ.get("ROUTER_PASSWORD")
         if not user or not password:
-            raise RuntimeError("Notandanafn eða lykilorð vantar í viðbótarstillingar.")
-        # DO NOT guess the cryptographic/transformation or CSRF sequence.
-        # LoginSubmit()/Submit() source has not been supplied or verified.
-        raise RuntimeError("Innskráning óvirk: staðfesta þarf LoginSubmit()/Submit() úr beininum.")
+            raise RouterError("Notandanafn eða lykilorð vantar í viðbótarstillingar.")
+        if self.login_attempted:
+            raise RouterError("Innskráning var þegar reynd í þessu kalli.")
+        # Submit(), ISNNOVAFTTR: fresh cookie jar, nonce POST, base64 (not SHA).
+        self.http.cookies.clear()
+        nonce = self.request("POST", "/asp/GetRandCount.asp").text.strip()
+        if not nonce or len(nonce) > 4096 or '<' in nonce:
+            raise RouterError("Beinir skilaði ekki gildu innskráningarmerki.")
+        self.http.cookies.set("Cookie", "body:Language:english:id=-1", path="/")
+        self.login_attempted = True  # Even a timeout may have created a session.
+        response = self.request("POST", "/login.cgi", data={
+            "UserName": user, "PassWord": base64.b64encode(password.encode("utf-8")).decode("ascii"),
+            "Language": "english", "x.X_HW_Token": nonce,
+        })
+        location = response.headers.get("Location", "")
+        if (location and (urlparse(location).netloc not in ("", urlparse(self.host).netloc)
+                          or re.search(r"login|error", location, re.I))) or is_login_page(response.text):
+            raise RouterError("Innskráning mistókst. Athugaðu aðgang og hvort vefviðmótið sé í notkun.")
+        self.logged_in = True
     
     def get(self, name: str) -> str:
         if name not in PAGES:
             raise ValueError("Óþekkt síða.")
-        response = self.http.get(self.host + PAGES[name], timeout=10)
-        response.raise_for_status()
+        response = self.request("GET", PAGES[name])
+        if 300 <= response.status_code < 400 or is_login_page(response.text):
+            raise RouterError("Innskráning rann út eða var hafnað af beini.")
         return response.text
 
     def logout(self):
-        # Authentication must supply the confirmed logout endpoint as well.
-        # No speculative request may be sent to a single-session device.
-        self.logged_in = False
+        if self.login_attempted:
+            try:
+                # Huawei ONT web UI logout route; confirm on target firmware
+                # during owner's eventual live review (login HTML has no logout).
+                response = self.request("POST", "/logout.cgi?RequestFile=html/logout.html")
+                if 300 <= response.status_code < 400 and not re.search(r'login|logout', response.headers.get("Location", ""), re.I):
+                    raise RouterError("Útskráning mistókst. Athugaðu setu í vefviðmóti beinis.")
+            except Exception:
+                raise RouterError("Útskráning mistókst. Athugaðu setu í vefviðmóti beinis.") from None
+            finally:
+                self.logged_in = False
 
     def close(self):
-        self.http.close()
+        try:
+            self.http.cookies.clear()
+        finally:
+            self.http.close()
+
+
+SESSION_LOCK = threading.Lock()
+
+
+def is_login_page(text):
+    return bool(re.search(r'txt_Username|txt_Password|function\s+LoginSubmit|name=[\"\x27]PassWord|location\s*(?:\.href\s*)?=\s*[\"\x27]/?login\.asp', text, re.I))
 
 
 @contextmanager
-def authenticated(session_factory=RouterSession):
-    router = session_factory()
-    try:
-        router.login()  # never retry automatically
-        yield router
-    finally:
+def authenticated(session_factory=None):
+    # FastMCP dispatches synchronous tools in worker threads.
+    with SESSION_LOCK:
+        router = (session_factory or RouterSession)()
         try:
-            router.logout()
+            router.login()  # exactly one attempt, no automatic HTTP retries
+            yield router
         finally:
-            router.close()
+            try:
+                router.logout()
+            finally:
+                router.close()
 
 
 def read_pages(*names: str) -> dict:
@@ -183,37 +137,94 @@ def read_pages(*names: str) -> dict:
     except Exception as exc:
         # Do not expose raw HTTP errors, credentials, pages, or session tokens.
         return {"error": "Ekki tókst að lesa beini. " + (
-            str(exc) if isinstance(exc, (ValueError, RuntimeError)) else "Athugaðu tengingu og innskráningu."
+            str(exc) if isinstance(exc, RouterError) else "Athugaðu tengingu og innskráningu."
         )}
+
+
+def rows(page):
+    return [row for records in page.values() for row in records]
+
+
+def field(row, *names):
+    lookup = {re.sub(r'[^a-z0-9]', '', k.lower()): v for k, v in row.items()}
+    for name in names:
+        value = lookup.get(re.sub(r'[^a-z0-9]', '', name.lower()))
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def mapped(page, schema):
+    return [{**{key: field(row, *aliases) for key, aliases in schema.items()},
+             "details": sanitize(row)} for row in rows(page)]
+
+
+def first(page, *aliases):
+    return next((value for row in rows(page) if (value := field(row, *aliases)) is not None), None)
 
 
 @mcp.tool()
 def router_status() -> str:
     """Model, firmware, uptime, WAN state/address and counters where published."""
-    return output(read_pages("deviceinfo", "wan", "wanlist"))
+    data = read_pages("deviceinfo", "wan", "wanlist")
+    if "error" in data:
+        return output(data)
+    return output({"model": first(data["deviceinfo"], "ModelName", "Model", "ProductClass"),
+                   "firmware": first(data["deviceinfo"], "SoftwareVersion", "FirmwareVersion"),
+                   "uptime": first(data["deviceinfo"], "UpTime", "SystemUpTime"),
+                   "wan": mapped({**{"wanlist."+k:v for k,v in data["wanlist"].items()},
+                                  **{"wan."+k:v for k,v in data["wan"].items()}}, {
+                       "state": ("ConnectionStatus", "Status", "WanStatus"),
+                       "ip": ("ExternalIPAddress", "IPAddress", "IPv4Address"),
+                       "uptime": ("Uptime", "ConnectionUptime"),
+                       "bytes_sent": ("TotalBytesSent", "BytesSent"),
+                       "bytes_received": ("TotalBytesReceived", "BytesReceived"),
+                   }), "details": data})
 
 
 @mcp.tool()
 def router_devices(name_filter: str = "") -> str:
     """LAN/Wi-Fi clients, online first; optional device name filter."""
     result = read_pages("devices")
-    if "error" not in result:
-        for key, records in result["devices"].items():
-            records[:] = [r for r in records if name_filter.casefold() in str(r.get("HostName") or "").casefold()]
-            records.sort(key=lambda r: str(r.get("DevStatus", "")).lower() not in ("1", "online", "up"))
-    return output(result)
+    if "error" in result:
+        return output(result)
+    devices = mapped(result["devices"], {
+        "name": ("HostName", "Name", "DeviceName"), "ip": ("IpAddr", "IPAddress"),
+        "mac": ("MacAddr", "MACAddress"), "port": ("Port", "PortName", "Interface"),
+        "band": ("Band", "FrequencyBand", "RadioBand"), "port_type": ("PortType",),
+        "status": ("DevStatus", "Status", "Active"), "connected_time": ("Time", "ConnectedTime", "Uptime"),
+    })
+    devices = [d for d in devices if name_filter.casefold() in str(d["name"] or "").casefold()]
+    for device in devices:
+        status = str(device["status"]).lower()
+        device["online"] = True if status in ("1", "true", "online", "up", "active") else False if status in ("0", "false", "offline", "down", "inactive") else None
+    devices.sort(key=lambda d: d["online"] is not True)
+    return output({"devices": devices})
 
 
 @mcp.tool()
 def router_ports() -> str:
     """Ethernet link/speed and traffic counters."""
-    return output(read_pages("eth"))
+    data = read_pages("eth")
+    return output(data if "error" in data else {"ports": mapped(data["eth"], {
+        "port": ("Name", "Port", "PortId", "InterfaceID"), "link": ("Status", "LinkStatus", "Link"),
+        "speed": ("Speed", "MaxBitRate", "ActualBitRate"),
+        "bytes_sent": ("BytesSent", "TxBytes", "SendBytes"),
+        "bytes_received": ("BytesReceived", "RxBytes", "ReceiveBytes"),
+        "packets_sent": ("PacketsSent", "TxPackets"), "packets_received": ("PacketsReceived", "RxPackets"),
+    })})
 
 
 @mcp.tool()
 def router_wifi() -> str:
     """Primary/guest Wi-Fi configuration (all secret-key fields removed)."""
-    return output(read_pages("wlan", "guest"))
+    data = read_pages("wlan", "guest")
+    if "error" in data:
+        return output(data)
+    schema = {"enabled": ("Enable", "Enabled", "RadioEnabled"), "ssid": ("SSID", "SSIDName"),
+              "band": ("Band", "FrequencyBand", "OperatingFrequencyBand"),
+              "security": ("BeaconType", "AuthenticationMode", "AuthMode", "SecurityMode")}
+    return output({"wifi": mapped(data["wlan"], schema), "guest": mapped(data["guest"], schema)})
 
 
 @mcp.tool()
@@ -230,29 +241,34 @@ def router_access_rules() -> str:
 
 @mcp.tool()
 def router_logs(kind: str = "firewall", limit: int = 50) -> str:
-    """Read firewall/user logs, at most 50 entries."""
+    """Read firewall/user logs; default 50, maximum 1000 entries across all groups."""
     if kind not in ("firewall", "user"):
         return output({"error": "Veldu kind=firewall eða kind=user."})
-    if limit < 1 or limit > 50:
-        return output({"error": "limit verður að vera á bilinu 1–50."})
+    if limit < 1 or limit > 1000:
+        return output({"error": "limit verður að vera á bilinu 1–1000."})
     page = "fwlog" if kind == "firewall" else "userlog"
     data = read_pages(page)
     if "error" not in data:
-        for rows in data[page].values():
-            del rows[limit:]
+        remaining = limit
+        for records in data[page].values():
+            del records[remaining:]
+            remaining -= len(records)
     return output(data)
 
 
 @mcp.tool()
 def router_dump_page(name: str) -> str:
-    """Discovery only, disabled by default. Returns sanitized constructor data (not raw HTML)."""
+    """Discovery only: redacted HTML/JavaScript source from an allowlisted page."""
     if os.getenv("ROUTER_DISCOVERY") != "1":
         return output({"error": "Uppgötvunarhamur er óvirkur."})
     if name not in PAGES:
         return output({"error": "Óþekkt síða."})
-    # Returning entire raw HTML cannot be proven safe by a regex. Fail closed:
-    # only already-parsed and scrubbed data is available for discovery.
-    return output(read_pages(name))
+    try:
+        with authenticated() as router:
+            source = redact_source(router.get(name))
+        return output({"page": name, "source": source})
+    except Exception:
+        return output({"error": "Ekki tókst að lesa eða afmá síðu beinis. Athugaðu tengingu og útskráningu."})
 
 
 if __name__ == "__main__":
