@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import unittest
+from http.cookies import SimpleCookie
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -24,12 +25,29 @@ def response(text='', status=200, headers=None):
     result._content = text.encode()
     result.encoding = 'utf-8'
     result.headers.update(headers or {})
+    cookies = SimpleCookie()
+    cookies.load((headers or {}).get('Set-Cookie',''))
+    for name, cookie in cookies.items():
+        result.cookies.set(name, cookie.value)
     return result
 
-def http_mock(*responses):
+def http_mock(*responses, bootstrap=None, verify=None):
     http = Mock()
     http.cookies = requests.cookies.RequestsCookieJar()
-    http.request.side_effect = list(responses)
+    # Navigation responses are separate so failure fixtures address named
+    # nonce/login/page/logout steps rather than fragile sequence offsets.
+    pending = iter(responses)
+    def request(method, url, **kwargs):
+        if method == 'GET' and url == HOST+'/':
+            result = bootstrap if bootstrap is not None else response()
+        elif method == 'GET' and url == HOST+'/index.asp':
+            result = verify if verify is not None else response()
+        else:
+            result = next(pending)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+    http.request.side_effect = request
     return http
 
 @patch.dict(os.environ, ENV)
@@ -41,9 +59,10 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(http.cookies.get('Cookie'),'body:Language:english:id=-1')
         calls = http.request.call_args_list
         self.assertEqual([(c.args[0],c.args[1]) for c in calls], [
-            ('POST',HOST+'/asp/GetRandCount.asp'),('POST',HOST+'/login.cgi'),
+            ('GET',HOST+'/'),('POST',HOST+'/asp/GetRandCount.asp'),('POST',HOST+'/login.cgi'),
+            ('GET',HOST+'/index.asp'),
             ('GET',HOST+server.PAGES['deviceinfo']),('POST',HOST+LOGOUT)])
-        self.assertEqual(calls[1].kwargs['data'],{'UserName':'test-user','PassWord':base64.b64encode(b'test-password').decode(),'Language':'english','x.X_HW_Token':'nonce'})
+        self.assertEqual(calls[2].kwargs['data'],{'UserName':'test-user','PassWord':base64.b64encode(b'test-password').decode(),'Language':'english','x.X_HW_Token':'nonce'})
         self.assertEqual(len(http.cookies),0)
         for call in calls:
             self.assertFalse(call.kwargs['allow_redirects'])
@@ -69,7 +88,7 @@ class SessionTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 with server.authenticated(lambda: server.RouterSession(http)):
                     self.fail('Must not read after failed login')
-            self.assertEqual(http.request.call_count,3)
+            self.assertEqual(http.request.call_count,4)
             self.assertTrue(http.request.call_args.args[1].endswith(LOGOUT))
             http.close.assert_called_once()
 
@@ -93,7 +112,7 @@ class SessionTests(unittest.TestCase):
         http = http_mock(response('<html>login</html>'))
         with self.assertRaises(server.RouterError):
             with server.authenticated(lambda: server.RouterSession(http)): pass
-        self.assertEqual(http.request.call_count,1)
+        self.assertEqual(http.request.call_count,2)
         http.close.assert_called_once()
 
     def test_calls_are_serialized(self):

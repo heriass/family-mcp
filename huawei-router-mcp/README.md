@@ -17,7 +17,7 @@ run against the home router. No Phase 2 write tools are included.
 | `router_access_rules` | Precise access/MAC rules and DHCP reservations |
 | `router_logs(kind="firewall", limit=50)` | Firewall or user records; global limit 1–1000 across constructor groups |
 | `router_dump_page(name)` | Allowlisted page source, only with `ROUTER_DISCOVERY=1` |
-| `router_diagnose()` | One login, deviceinfo read/parse and logout; step names, HTTP codes and byte lengths only |
+| `router_diagnose()` | Browser login/verify, deviceinfo read/parse and logout; steps, HTTP codes, byte lengths and login Set-Cookie names only |
 
 The single generic parser reads `function Name(fields)` and `new Name(args)`;
 it decodes JS string escapes without evaluating JavaScript. Normalized fields
@@ -52,12 +52,20 @@ in memory; Home Assistant itself manages `/data/options.json`.
 The attached login page's `Submit()`/`LoginSubmit()` implementation was inspected.
 For ISNNOVAFTTR each call:
 
-1. Creates a fresh HTTP session and POSTs `/asp/GetRandCount.asp`.
-2. Sets `Cookie=body:Language:english:id=-1`.
-3. POSTs `/login.cgi` with `UserName`, base64 `PassWord`, `Language=english`, and
+1. Creates a fresh HTTP session and GETs `/`, retaining any bootstrap cookies.
+2. POSTs `/asp/GetRandCount.asp` with Referer `/`, Origin set to the router host,
+   form Content-Type, and `X-Requested-With: XMLHttpRequest` (jQuery semantics).
+3. Sets the host-only cookie named `Cookie`, value `body:Language:english:id=-1`,
+   path `/`, retaining all unrelated cookies from the first two responses.
+4. POSTs `/login.cgi` with `UserName`, base64 `PassWord`, `Language=english`, and
    `x.X_HW_Token` set to the returned nonce. No SHA transformation or login retry.
-4. Reads only the requested allowlisted status pages.
-5. Attempts logout in `finally`, including failed/timed-out login submissions,
+   Referer, Origin and form Content-Type match the browser form submission;
+   the AJAX-only header is not added to this form POST.
+5. GETs the fixed same-origin `/index.asp` in a separate `verify` step. The login
+   is not considered successful until this returns without an HTTP error,
+   redirect or login page. Cookies set by login.cgi are retained for this GET.
+6. Reads only the requested allowlisted status pages, with Referer `/index.asp`.
+7. Attempts logout in `finally`, including failed/timed-out login submissions,
    HTTP/parsing errors and discovery calls, then clears cookies and closes HTTP.
 
 Concurrent calls in one server process are serialized across the whole session.
@@ -130,7 +138,9 @@ device blocking was performed. Phase 2 requires a separate approved branch.
 
 Each attempted HTTP step emits exactly one JSON line to stderr, after response
 validation/parsing. Fields are `step` (`nonce`, `login`, `page:<name>`, `logout`),
-`status`, `location` and `length` (response bytes). A failed step also includes
+`status`, `location` and `length` (response bytes). In 0.2.3 the sequence adds
+`bootstrap` (GET `/`) before nonce and `verify` (GET `/index.asp`) after login.
+A failed step also includes
 `exception`, containing only its class name. No exception messages, tracebacks,
 request/response bodies, cookies, nonce, credentials or base64 credentials are
 logged. Status and length are `null` if no HTTP response was received.
@@ -146,8 +156,12 @@ parser ValueErrors now return specific Icelandic errors. Parser errors identify
 the page, never the parser message or page source. Unexpected step failures
 also log only the exception class and return a fixed error naming the step.
 
-Call `router_diagnose()` to perform one login attempt, read and parse deviceinfo,
-and attempt logout. It returns `steps` with only `step`, `status`, `length`;
+Call `router_diagnose()` to perform one browser-flow login attempt with index
+verification, read and parse deviceinfo, and attempt logout. It returns `steps`
+with `step`, `status`, `length`; the `login` step additionally includes
+`set_cookie_names`, extracted only from the login.cgi response cookie jar
+(never values, nor cookies from earlier responses). Cookie names are not added
+to stderr diagnostics. With no login response, the names list is empty;
 it includes a safe top-level `error` if login/read fails. Logout is included even
 if login/read fails after login submission. Logout failures are logged and shown
 by their step metadata but remain non-fatal, preserving the reviewed behavior.

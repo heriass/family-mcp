@@ -95,7 +95,12 @@ class RouterSession:
         finally:
             status = response.status_code if response is not None else None
             length = len(response.content) if response is not None else None
-            self.steps.append({"step": step, "status": status, "length": length})
+            entry = {"step": step, "status": status, "length": length}
+            if step == "login":
+                # Response.cookies contains only cookies set by this response,
+                # not the session jar. Never inspect or serialize their values.
+                entry["set_cookie_names"] = sorted({scrub_text(name) for name in response.cookies.keys()}) if response is not None else []
+            self.steps.append(entry)
             line = {"step": step, "status": status,
                     "location": location_path(response.headers.get("Location", "")) if response is not None else "",
                     "length": length}
@@ -122,6 +127,12 @@ class RouterSession:
             raise RouterError(f"Óvænt tilvísun frá login.cgi í skrefi login: kóði {response.status_code}.")
         if is_login_page(response.text):
             raise RouterError("Innskráningarsíða kom aftur eftir innskráningu í skrefi login.")
+
+    def verify_response(self, response):
+        if 300 <= response.status_code < 400:
+            raise RouterError(f"Tilvísun frá index.asp í skrefi verify: kóði {response.status_code}.")
+        if is_login_page(response.text):
+            raise RouterError("Innskráningarsíða kom aftur frá index.asp í skrefi verify. Innskráningu var hafnað.")
         self.logged_in = True
 
     def login(self):
@@ -131,15 +142,27 @@ class RouterSession:
             raise RouterError("Notandanafn eða lykilorð vantar í viðbótarstillingar.")
         if self.login_attempted:
             raise RouterError("Innskráning var þegar reynd í þessu kalli.")
-        # Submit(), ISNNOVAFTTR: fresh cookie jar, nonce POST, base64 (not SHA).
-        self.http.cookies.clear()
-        nonce = self.request("POST", "/asp/GetRandCount.asp", step="nonce", process=self.nonce_response)
-        self.http.cookies.set("Cookie", "body:Language:english:id=-1", path="/")
+        # First load the page as the browser does, preserving its session cookies.
+        self.request("GET", "/", step="bootstrap")
+        form_headers = {"Referer": self.host + "/", "Origin": self.host,
+                        "Content-Type": "application/x-www-form-urlencoded"}
+        nonce = self.request("POST", "/asp/GetRandCount.asp", step="nonce", process=self.nonce_response,
+                             headers={**form_headers, "X-Requested-With": "XMLHttpRequest"}, data={})
+        # document.cookie: host-only cookie named Cookie, path /; unrelated
+        # cookies from bootstrap/nonce remain in the session jar.
+        language_cookie = requests.cookies.create_cookie("Cookie", "body:Language:english:id=-1",
+                                                        domain=urlparse(self.host).hostname, path="/")
+        language_cookie.domain_specified = False
+        self.http.cookies.set_cookie(language_cookie)
         self.login_attempted = True  # Even a timeout may have created a session.
-        self.request("POST", "/login.cgi", step="login", process=self.login_response, data={
+        self.request("POST", "/login.cgi", step="login", process=self.login_response, headers=form_headers, data={
             "UserName": user, "PassWord": base64.b64encode(password.encode("utf-8")).decode("ascii"),
             "Language": "english", "x.X_HW_Token": nonce,
         })
+        # A 200 login.cgi response alone does not establish authentication.
+        # Follow only this fixed same-origin navigation, never a supplied URL.
+        self.request("GET", "/index.asp", step="verify", process=self.verify_response,
+                     headers={"Referer": self.host + "/"})
     
     def get(self, name: str, parsed=False, transform=None):
         if name not in PAGES:
@@ -152,7 +175,8 @@ class RouterSession:
             if transform is not None:
                 return transform(response.text)
             return parse_page(response.text) if parsed else response.text
-        return self.request("GET", PAGES[name], step="page:" + name, process=process)
+        return self.request("GET", PAGES[name], step="page:" + name, process=process,
+                            headers={"Referer": self.host + "/index.asp"})
 
     def logout(self):
         if self.login_attempted:
@@ -234,7 +258,7 @@ def first(page, *aliases):
 
 @mcp.tool()
 def router_diagnose() -> str:
-    """One login, deviceinfo read/parse and logout; return only step/status/byte lengths."""
+    """Browser login/verify, deviceinfo and logout; metadata and login cookie names only."""
     steps = []
     error = None
     try:

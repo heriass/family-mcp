@@ -30,7 +30,7 @@ class DiagnosticsTests(unittest.TestCase):
         for line in lines:
             self.assertLessEqual(set(line), {'step','status','length','location','exception'})
         for step in result['steps']:
-            self.assertEqual(set(step), {'step','status','length'})
+            self.assertEqual(set(step), {'step','status','length','set_cookie_names'} if step['step'] == 'login' else {'step','status','length'})
         self.assertEqual(len(lines), http.request.call_count)
         http.close.assert_called_once()
         return result, lines, stderr.getvalue()
@@ -43,10 +43,10 @@ class DiagnosticsTests(unittest.TestCase):
             'Set-Cookie':'session=private-cookie'}), response(body), response())
         result, lines, logs = self.diagnose(http)
         self.assertNotIn('error', result)
-        self.assertEqual([s['step'] for s in result['steps']], ['nonce','login','page:deviceinfo','logout'])
-        self.assertEqual([s['status'] for s in result['steps']], [200,302,200,200])
-        self.assertEqual(result['steps'][2]['length'],len(body.encode()))
-        self.assertEqual(lines[1]['location'],'/index.asp')
+        self.assertEqual([s['step'] for s in result['steps']], ['bootstrap','nonce','login','verify','page:deviceinfo','logout'])
+        self.assertEqual([s['status'] for s in result['steps']], [200,200,302,200,200,200])
+        self.assertEqual(result['steps'][4]['length'],len(body.encode()))
+        self.assertEqual(lines[2]['location'],'/index.asp')
         for value in (secret,'test-user','test-password','private-cookie','private-body',
                       base64.b64encode(b'test-password').decode(), 'Set-Cookie'):
             self.assertNotIn(value, logs+json.dumps(result))
@@ -109,8 +109,8 @@ class DiagnosticsTests(unittest.TestCase):
             http = http_mock(response('nonce'),failure,response())
             result, lines, logs = self.diagnose(http)
             self.assertIn(label,result['error'])
-            self.assertEqual([s['step'] for s in result['steps']],['nonce','login','logout'])
-            self.assertEqual(lines[1]['exception'],'RouterError')
+            self.assertEqual([s['step'] for s in result['steps']],['bootstrap','nonce','login','logout'])
+            self.assertEqual(lines[2]['exception'],'RouterError')
             self.assertNotIn('private-secret',logs+json.dumps(result))
             self.assertEqual(sum(c.args[1].endswith('/login.cgi') for c in http.request.call_args_list),1)
 
@@ -119,7 +119,7 @@ class DiagnosticsTests(unittest.TestCase):
         result, lines, _ = self.diagnose(http)
         self.assertIn('Innskráningarsíða',result['error'])
         self.assertIn('page:deviceinfo',result['error'])
-        self.assertEqual(lines[2]['exception'],'RouterError')
+        self.assertEqual(lines[4]['exception'],'RouterError')
         self.assertEqual(result['steps'][-1]['step'],'logout')
 
     def test_parser_valueerror_and_logout_failure_preserve_primary_error(self):
@@ -127,8 +127,8 @@ class DiagnosticsTests(unittest.TestCase):
         with patch.object(server,'parse_page',side_effect=ValueError('private-parser-secret')):
             result, lines, logs = self.diagnose(http)
         self.assertIn('þátta síðu deviceinfo',result['error'])
-        self.assertEqual(lines[2]['exception'],'ValueError')
-        self.assertEqual(lines[3]['exception'],'HTTPError')
+        self.assertEqual(lines[4]['exception'],'ValueError')
+        self.assertEqual(lines[5]['exception'],'HTTPError')
         self.assertNotIn('private-parser-secret', logs+json.dumps(result))
 
     def test_regular_tools_also_map_parser_errors(self):
@@ -138,7 +138,7 @@ class DiagnosticsTests(unittest.TestCase):
             result = server.read_pages('devices')
         lines = [json.loads(line) for line in stderr.getvalue().splitlines()]
         self.assertIn('þátta síðu devices',result['error'])
-        self.assertEqual(lines[2]['exception'],'ValueError')
+        self.assertEqual(lines[4]['exception'],'ValueError')
         self.assertEqual(lines[-1]['step'],'logout')
 
     def test_addon_keeps_reviewed_network_and_boot_settings(self):
