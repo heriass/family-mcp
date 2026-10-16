@@ -1,25 +1,18 @@
-# Huawei V261a-20 MCP — incomplete Phase 1 scaffold
+# Huawei V261a-20 MCP — Phase 1 review scaffold
 
-**NOT INSTALLABLE.** The requested login-page HTML with `Submit()` and
-`LoginSubmit()` was not present in the conversation. Exact ISNNOVAFTTR
-non-SHA authentication cannot safely be inferred. There is no router-facing
-server or credential handling on this branch yet.
+**NOT READY TO INSTALL.** The login page HTML containing Submit()/LoginSubmit() is unavailable. The authentication function in server.py intentionally fails closed. Its logout implementation is a placeholder, not a confirmed router logout request. No router was contacted.
 
-This branch contains an offline-only constructor parser and focused tests.
-Neither router login/logout nor the requested FastMCP tools or Home Assistant
-add-on are implemented. In particular the discovery source dump fails closed.
+Included: FastMCP stdio tools, constructor parser, field-name secret filtering, output limit, tests, and an HA add-on wrapper. The tools cannot read live data until exact authentication/logout is implemented.
 
-To proceed, supply the login page JavaScript **without credentials, session
-cookies or CSRF/token values**. Implement one-session login/read/logout with
-finally-based cleanup, mock-HTTP tests for logout and login retry limits,
-read-only tools, conservative redaction and authenticated MCP access before
-installation. Do not expose port 8095 outside a trusted network.
+**Differences from requested scope:** router_dump_page emits sanitized parsed constructor data instead of raw HTML; status/port/device outputs retain constructor keys rather than a fully mapped normalized schema; no verified login/logout. These changes are intentionally conservative to avoid unsafe credential/session handling.
 
-Local offline tests:
-
+Run tests locally:
 ```sh
 cd huawei-router-mcp
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-Phase 2 write operations are deliberately absent.
+Before installation: provide redacted login-page JS, implement and mock-test exact login/logout sequence including failed HTTP reads, review certificate and network exposure of port 8095, validate field mapping and redaction with real sample pages. Do not proceed with Phase 2 write tools until separately approved.
