@@ -1,5 +1,5 @@
 name: Huawei Router MCP
-version: "0.2.4"
+version: "0.2.5"
 slug: huawei_router_mcp
 description: Read-only Huawei V261a-20 MCP
 arch:

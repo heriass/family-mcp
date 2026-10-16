@@ -296,68 +296,132 @@ def router_diagnose() -> str:
     return output(result)
 
 
+def _num(value):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _bytes64(row, low, high):
+    """Huawei splits 64-bit counters into a low 32-bit field and a *_H high field."""
+    lo, hi = _num(row.get(low)), _num(row.get(high)) or 0
+    return None if lo is None else hi * 2**32 + lo
+
+
+def _gb(value):
+    return None if value is None else round(value / 1_000_000_000, 2)
+
+
+def _port_no(domain):
+    m = re.search(r"LANPort\.(\d+)\.", str(domain or ""))
+    return int(m.group(1)) if m else None
+
+
+SPEEDS = {"0": "10 Mbit/s", "1": "100 Mbit/s", "2": "1 Gbit/s", "3": "2,5 Gbit/s", "4": "10 Gbit/s"}
+
+
 @mcp.tool()
 def router_status() -> str:
-    """Model, firmware, uptime, WAN state/address and counters where published."""
-    data = read_pages("deviceinfo", "wan", "wanlist")
+    """Router model/firmware, uplink port and total internet traffic since the router last restarted."""
+    data = read_pages("deviceinfo", "eth")
     if "error" in data:
         return output(data)
-    return output({"model": first(data["deviceinfo"], "ModelName", "Model", "ProductClass"),
-                   "firmware": first(data["deviceinfo"], "SoftwareVersion", "FirmwareVersion"),
-                   "uptime": first(data["deviceinfo"], "UpTime", "SystemUpTime"),
-                   "wan": mapped({**{"wanlist."+k:v for k,v in data["wanlist"].items()},
-                                  **{"wan."+k:v for k,v in data["wan"].items()}}, {
-                       "state": ("ConnectionStatus", "Status", "WanStatus"),
-                       "ip": ("ExternalIPAddress", "IPAddress", "IPv4Address"),
-                       "uptime": ("Uptime", "ConnectionUptime"),
-                       "bytes_sent": ("TotalBytesSent", "BytesSent"),
-                       "bytes_received": ("TotalBytesReceived", "BytesReceived"),
-                   }), "details": data})
+    info = (data["deviceinfo"].get("stDeviceInfo") or [{}])[0]
+    eth_rows = rows(data["eth"])
+    wan = next((r for r in eth_rows if "BytesReceived" in r and "BytesSent" in r), {})
+    uplink = next((r for r in eth_rows if "X_HW_MainUpPort" in r), {})
+    return output({
+        "model": info.get("ModelName"), "firmware": info.get("SoftwareVersion"),
+        "hardware": info.get("HardwareVersion"), "description": info.get("Description"),
+        "uplink_port": uplink.get("X_HW_MainUpPort"), "uplink_type": uplink.get("typpon"),
+        "internet_total": {
+            "received_gb": _gb(_num(wan.get("BytesReceived"))), "sent_gb": _gb(_num(wan.get("BytesSent"))),
+            "packets_received": _num(wan.get("PacketsReceived")), "packets_sent": _num(wan.get("PacketsSent")),
+            "note": "Teljarar routersins frá síðustu endurræsingu (geta velt yfir við 4 GB á eldri hugbúnaði).",
+        },
+    })
 
 
 @mcp.tool()
-def router_devices(name_filter: str = "") -> str:
-    """LAN/Wi-Fi clients, online first; optional device name filter."""
+def router_devices(name_filter: str = "", include_offline: bool = False) -> str:
+    """Devices the router knows: name, IP, MAC, wired port (LAN1-4) or Wi-Fi, online status, connected time.
+    Online only by default; include_offline=True adds remembered offline devices. LAN2 = UniFi Wi-Fi network."""
     result = read_pages("devices")
     if "error" in result:
         return output(result)
-    devices = mapped(result["devices"], {
-        "name": ("HostName", "Name", "DeviceName"), "ip": ("IpAddr", "IPAddress"),
-        "mac": ("MacAddr", "MACAddress"), "port": ("Port", "PortName", "Interface"),
-        "band": ("Band", "FrequencyBand", "RadioBand"), "port_type": ("PortType",),
-        "status": ("DevStatus", "Status", "Active"), "connected_time": ("Time", "ConnectedTime", "Uptime"),
-    })
-    devices = [d for d in devices if name_filter.casefold() in str(d["name"] or "").casefold()]
-    for device in devices:
-        status = str(device["status"]).lower()
-        device["online"] = True if status in ("1", "true", "online", "up", "active") else False if status in ("0", "false", "offline", "down", "inactive") else None
-    devices.sort(key=lambda d: d["online"] is not True)
-    return output({"devices": devices})
+    out = []
+    for r in rows(result["devices"]):
+        name = r.get("UserDevAlias") or r.get("HostName") or ""
+        online = str(r.get("DevStatus", "")).lower() == "online"
+        if (not include_offline and not online) or (name_filter and name_filter.casefold() not in name.casefold()):
+            continue
+        out.append({"name": name or None, "ip": r.get("IpAddr") or None, "mac": r.get("MacAddr"),
+                    "port": r.get("Port"), "connection": {"ETH": "snúra", "WIFI": "WiFi"}.get(r.get("PortType"), r.get("PortType")),
+                    "online": online, "connected_time": r.get("Time") or None, "ip_type": r.get("IpType") or None})
+    out.sort(key=lambda d: (not d["online"], d["port"] or "", (d["name"] or "~").casefold()))
+    by_port = {}
+    for d in out:
+        if d["online"]:
+            by_port[d["port"]] = by_port.get(d["port"], 0) + 1
+    return output({"count": len(out), "online_by_port": by_port, "devices": out})
 
 
 @mcp.tool()
 def router_ports() -> str:
-    """Ethernet link/speed and traffic counters."""
+    """Wired LAN ports 1-4: link, speed, duplex, traffic (GB) and error counters since the router last restarted."""
     data = read_pages("eth")
-    return output(data if "error" in data else {"ports": mapped(data["eth"], {
-        "port": ("Name", "Port", "PortId", "InterfaceID"), "link": ("Status", "LinkStatus", "Link"),
-        "speed": ("Speed", "MaxBitRate", "ActualBitRate"),
-        "bytes_sent": ("BytesSent", "TxBytes", "SendBytes"),
-        "bytes_received": ("BytesReceived", "RxBytes", "ReceiveBytes"),
-        "packets_sent": ("PacketsSent", "TxPackets"), "packets_received": ("PacketsReceived", "RxPackets"),
-    })})
+    if "error" in data:
+        return output(data)
+    ports = {}
+    for r in rows(data["eth"]):
+        n = _port_no(r.get("domain"))
+        if n is None:
+            continue
+        p = ports.setdefault(n, {"port": f"LAN{n}"})
+        if "Speed" in r and "Status" in r:
+            p["link"] = "tengt" if str(r.get("Status")) == "1" else "ótengt"
+            p["speed"] = SPEEDS.get(str(r.get("Speed")), r.get("Speed")) if p["link"] == "tengt" else None
+            p["duplex"] = {"0": "half", "1": "full"}.get(str(r.get("Mode")), r.get("Mode")) if p["link"] == "tengt" else None
+        if "txGoodBytes" in r:
+            p["sent_gb"] = _gb(_bytes64(r, "txGoodBytes", "txGoodBytes_H"))
+            p["received_gb"] = _gb(_bytes64(r, "rxGoodBytes", "rxGoodBytes_H"))
+            p["bad_bytes_received"] = _bytes64(r, "rxBadBytes", "rxBadBytes_H")
+        if "RcvFcsErrFrame" in r:
+            p["errors"] = sum(_num(v) or 0 for k, v in r.items() if k != "domain")
+    uplink = next((r.get("X_HW_MainUpPort") for r in rows(data["eth"]) if "X_HW_MainUpPort" in r), None)
+    return output({"uplink_port": uplink, "ports": [ports[k] for k in sorted(ports)],
+                   "note": "sent = frá routernum út á gáttina, received = inn á routerinn frá tækinu á gáttinni."})
 
 
 @mcp.tool()
 def router_wifi() -> str:
-    """Primary/guest Wi-Fi configuration (all secret-key fields removed)."""
+    """Router's own Wi-Fi networks and guest Wi-Fi: SSID, on/off, hidden, connected devices, security. Never passwords."""
     data = read_pages("wlan", "guest")
     if "error" in data:
         return output(data)
-    schema = {"enabled": ("Enable", "Enabled", "RadioEnabled"), "ssid": ("SSID", "SSIDName"),
-              "band": ("Band", "FrequencyBand", "OperatingFrequencyBand"),
-              "security": ("BeaconType", "AuthenticationMode", "AuthMode", "SecurityMode")}
-    return output({"wifi": mapped(data["wlan"], schema), "guest": mapped(data["guest"], schema)})
+
+    def nets(page, guest):
+        seen, res = set(), []
+        for r in rows(page):
+            ssid = r.get("ssid") or r.get("SSID")
+            if not ssid or "BeaconType" not in r:
+                continue
+            key = (r.get("domain"), ssid)
+            if key in seen:
+                continue
+            seen.add(key)
+            hidden = r.get("wlHide")
+            if hidden is None and r.get("SSIDAdvertisementEnabled") is not None:
+                hidden = "0" if str(r.get("SSIDAdvertisementEnabled")) == "1" else "1"
+            res.append({"ssid": ssid, "enabled": str(r.get("enable")) == "1", "guest": guest,
+                        "hidden": str(hidden) == "1" if hidden is not None else None,
+                        "devices": _num(r.get("DeviceNum")), "security": r.get("BeaconType"),
+                        "band": "5 GHz" if re.search(r"WLANConfiguration\.(5|6|7|8)\b", str(r.get("domain"))) else "2,4 GHz"})
+        return res
+
+    return output({"wifi": nets(data["wlan"], False), "guest": nets(data["guest"], True),
+                   "note": "UniFi-netið (HeriHeima) er ekki hér; þetta eru net routersins sjálfs."})
 
 
 @mcp.tool()
